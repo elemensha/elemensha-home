@@ -66,7 +66,20 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/elemensha.jks"
+            # 시크릿에 줄바꿈이나 CR 이 섞여 들어가면 디코딩 결과가 깨지는데,
+            # 그 상태로 진행하면 한참 뒤 packageRelease 에서 정체불명의
+            # "DerInputStream.getLength()" 오류로 터진다. 여기서 걸러낸다.
+            printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "$RUNNER_TEMP/elemensha.jks"
+
+            # PKCS12/JKS 는 DER SEQUENCE(0x30) 또는 JKS 매직으로 시작한다.
+            MAGIC=$(head -c 1 "$RUNNER_TEMP/elemensha.jks" | od -An -tx1 | tr -d ' ')
+            SIZE=$(stat -c%s "$RUNNER_TEMP/elemensha.jks")
+            echo "복원된 키스토어: ${SIZE} bytes, 첫 바이트 0x${MAGIC}"
+            if [ "$MAGIC" != "30" ] && [ "$MAGIC" != "fe" ]; then
+              echo "::error::키스토어 디코딩 실패. KEYSTORE_BASE64 시크릿에 공백이나 줄바꿈이 섞였는지 확인하세요."
+              exit 1
+            fi
+
             echo "ELEMENSHA_KEYSTORE=$RUNNER_TEMP/elemensha.jks" >> "$GITHUB_ENV"
             echo "서명 키 준비됨"
           else
