@@ -11,7 +11,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,11 +38,15 @@ import com.elemensha.home.data.Listing
  * 서비스키가 없는지, 조건에 맞는 물건이 정말 없는지는 전혀 다른 상황인데
  * 화면상으로는 똑같이 "빈 목록"이라 구분이 안 된다.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ListingsScreen(
     state: UiState,
     onRefresh: () -> Unit,
     onPlanForListing: (Listing) -> Unit,
+    onSelectFilter: (Int?) -> Unit,
+    onShowAll: () -> Unit,
+    onSort: (String) -> Unit,
 ) {
     val context = LocalContext.current
 
@@ -55,12 +62,62 @@ fun ListingsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "물건 ${state.listings.size}건",
-                    style = MaterialTheme.typography.titleMedium,
-                )
+                Column {
+                    Text(
+                        if (state.totalMatched > state.listings.size)
+                            "물건 ${state.listings.size} / ${state.totalMatched}건"
+                        else "물건 ${state.totalMatched}건",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        if (state.applyFilters) "조건 적용됨" else "조건 없이 전체",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 OutlinedButton(onClick = onRefresh, enabled = !state.loading) {
                     Text("새로고침")
+                }
+            }
+        }
+
+        // 조건 선택. 조건 탭에서 만든 것이 여기 칩으로 뜬다.
+        item {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(
+                    selected = !state.applyFilters,
+                    onClick = onShowAll,
+                    label = { Text("전체") },
+                )
+                FilterChip(
+                    selected = state.applyFilters && state.selectedFilterId == null,
+                    onClick = { onSelectFilter(null) },
+                    label = { Text("내 조건 전부") },
+                    enabled = state.filters.isNotEmpty(),
+                )
+                state.filters.forEach { filter ->
+                    FilterChip(
+                        selected = state.selectedFilterId == filter.id,
+                        onClick = { filter.id?.let(onSelectFilter) },
+                        label = { Text(filter.name) },
+                    )
+                }
+            }
+        }
+
+        item {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(
+                    "recent" to "최신순",
+                    "discount" to "할인폭순",
+                    "price" to "가격순",
+                    "deadline" to "마감임박순",
+                ).forEach { (key, label) ->
+                    FilterChip(
+                        selected = state.sort == key,
+                        onClick = { onSort(key) },
+                        label = { Text(label) },
+                    )
                 }
             }
         }
@@ -107,7 +164,10 @@ private fun EmptyExplanation(state: UiState) {
                     "수집이 실패하고 있다: " +
                         health.pollStatus.filter { !it.ok }
                             .joinToString(", ") { "${it.source} - ${it.error ?: "원인 미상"}" }
-                else -> "수집은 정상인데 조건에 맞는 물건이 없다. 조건 탭에서 범위를 넓혀볼 것."
+                state.applyFilters && state.filters.isNotEmpty() ->
+                    "수집된 물건은 있는데 조건에 걸리는 게 없다. 위의 '전체' 칩을 눌러 " +
+                        "조건 없이 보거나, 조건 탭에서 범위를 넓혀볼 것."
+                else -> "수집은 정상인데 보여줄 물건이 없다."
             }
             Text(reason, style = MaterialTheme.typography.bodyMedium)
 

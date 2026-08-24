@@ -86,12 +86,21 @@ class Api(
 
     suspend fun health(): HealthResponse = get("/api/health")
 
-    suspend fun listings(source: String? = null, limit: Int = 100): List<Listing> {
+    suspend fun listings(
+        source: String? = null,
+        limit: Int = 100,
+        filterId: Int? = null,
+        applyFilters: Boolean = true,
+        sort: String = "recent",
+    ): ListingsResponse {
         val query = buildString {
             append("/api/listings?limit=").append(limit)
+            append("&apply_filters=").append(applyFilters)
+            append("&sort=").append(sort)
             if (source != null) append("&source=").append(source)
+            if (filterId != null) append("&filter_id=").append(filterId)
         }
-        return get<ListingsResponse>(query).items
+        return get(query)
     }
 
     /** 아직 알리지 않은, 필터에 걸린 물건. 백그라운드 워커가 이걸 본다. */

@@ -101,6 +101,9 @@ private fun AppScaffold(viewModel: AppViewModel) {
                         viewModel.planForListing(listing)
                         tab = Tab.PLAN
                     },
+                    onSelectFilter = viewModel::selectFilter,
+                    onShowAll = viewModel::showAllListings,
+                    onSort = viewModel::setSort,
                 )
                 Tab.PLAN -> PlanScreen(
                     state = state,

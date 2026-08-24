@@ -24,7 +24,13 @@ data class UiState(
     val apiToken: String = "",
     val health: HealthResponse? = null,
     val listings: List<Listing> = emptyList(),
+    /** 조건을 통과한 전체 건수. listings 는 그중 앞부분만 담는다. */
+    val totalMatched: Int = 0,
     val filters: List<FilterProfile> = emptyList(),
+    /** null 이면 켜져 있는 조건 전체(합집합). */
+    val selectedFilterId: Int? = null,
+    val applyFilters: Boolean = true,
+    val sort: String = "recent",
     val borrower: BorrowerProfile = BorrowerProfile(),
     val plan: PlanResponse? = null,
     val update: Updater.State = Updater.State.Idle,
@@ -79,9 +85,49 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refresh() = launchGuarded {
         val health = api.health()
-        val listings = api.listings()
         val filters = api.filters()
-        _state.update { it.copy(health = health, listings = listings, filters = filters) }
+        val current = _state.value
+        val response = api.listings(
+            filterId = current.selectedFilterId,
+            applyFilters = current.applyFilters,
+            sort = current.sort,
+        )
+        _state.update {
+            it.copy(
+                health = health,
+                filters = filters,
+                listings = response.items,
+                totalMatched = response.totalMatched,
+            )
+        }
+    }
+
+    /** 목록만 다시 가져온다. 조건·정렬을 바꿀 때 쓴다. */
+    private fun reloadListings() = launchGuarded {
+        val current = _state.value
+        val response = api.listings(
+            filterId = current.selectedFilterId,
+            applyFilters = current.applyFilters,
+            sort = current.sort,
+        )
+        _state.update {
+            it.copy(listings = response.items, totalMatched = response.totalMatched)
+        }
+    }
+
+    fun selectFilter(id: Int?) {
+        _state.update { it.copy(selectedFilterId = id, applyFilters = true) }
+        reloadListings()
+    }
+
+    fun showAllListings() {
+        _state.update { it.copy(selectedFilterId = null, applyFilters = false) }
+        reloadListings()
+    }
+
+    fun setSort(sort: String) {
+        _state.update { it.copy(sort = sort) }
+        reloadListings()
     }
 
     fun updateBorrower(profile: BorrowerProfile) {
@@ -129,16 +175,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun saveFilter(filter: FilterProfile) = launchGuarded {
         api.saveFilter(filter)
         _state.update { it.copy(filters = api.filters()) }
+        // 조건을 바꿨는데 목록이 그대로면 적용됐는지 알 수 없다.
+        reloadListings()
     }
 
     fun deleteFilter(id: Int) = launchGuarded {
         api.deleteFilter(id)
-        _state.update { it.copy(filters = api.filters()) }
+        val remaining = api.filters()
+        _state.update {
+            it.copy(
+                filters = remaining,
+                selectedFilterId = if (it.selectedFilterId == id) null else it.selectedFilterId,
+            )
+        }
+        reloadListings()
     }
 
     fun triggerServerRefresh() = launchGuarded {
         api.refresh()
-        _state.update { it.copy(listings = api.listings(), health = api.health()) }
+        val current = _state.value
+        val response = api.listings(
+            filterId = current.selectedFilterId,
+            applyFilters = current.applyFilters,
+            sort = current.sort,
+        )
+        _state.update {
+            it.copy(
+                listings = response.items,
+                totalMatched = response.totalMatched,
+                health = api.health(),
+            )
+        }
     }
 
     // ---------------------------------------------------------- 인앱 업데이트

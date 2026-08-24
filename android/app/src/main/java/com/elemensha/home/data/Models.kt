@@ -41,7 +41,12 @@ data class Listing(
 }
 
 @Serializable
-data class ListingsResponse(val items: List<Listing> = emptyList())
+data class ListingsResponse(
+    val items: List<Listing> = emptyList(),
+    /** 조건을 통과한 전체 건수. 화면에 몇 건 중 몇 건인지 보여준다. */
+    @SerialName("total_matched") val totalMatched: Int = 0,
+    @SerialName("filters_applied") val filtersApplied: List<String> = emptyList(),
+)
 
 @Serializable
 data class FilterProfile(

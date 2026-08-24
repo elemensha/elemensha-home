@@ -37,6 +37,10 @@ STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 APP_VERSION = "0.1.0"
 APP_VERSION_CODE = 1
 
+# 조건 매칭 시 훑어볼 최근 물건 수. 전부 객체로 만들어 비교해야 해서
+# 무제한으로 두면 작은 VM 의 메모리를 밀어낸다.
+MATCH_SCAN_LIMIT = 2000
+
 store = Store(settings.db_path)
 rules = load_ruleset(settings.rules_path)
 provenance = load_provenance(settings.citations_path)
@@ -296,9 +300,61 @@ async def get_listings(
     source: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    filter_id: int | None = None,
+    apply_filters: bool = True,
+    sort: str = "recent",
     _: None = Depends(require_token),
 ) -> dict:
-    return {"items": store.listings(source=source, limit=min(limit, 500), offset=offset)}
+    """저장된 조건에 맞는 물건만 돌려준다.
+
+    `apply_filters=false` 면 조건을 무시하고 전부 준다. 조건이 하나도 없으면
+    거를 것이 없으므로 역시 전부 준다 - 조건을 안 만든 사용자에게 빈 화면을
+    보여주는 것이 더 나쁘다.
+
+    `filter_id` 를 주면 그 조건 하나만 쓴다. 여러 조건이 켜져 있으면 합집합이다.
+    """
+    from .store import listing_from_dict
+
+    profiles = [p for p in store.filters() if p.enabled]
+    if filter_id is not None:
+        profiles = [p for p in profiles if p.id == filter_id]
+    filtering = apply_filters and bool(profiles)
+
+    page = min(limit, 500)
+
+    if not filtering:
+        # 거를 게 없으면 DB 가 세게 한다. 가져온 행 수를 총계로 쓰면
+        # limit=1 일 때 "전체 1건" 같은 거짓말이 나온다.
+        counts = store.count()
+        total = counts.get(source, 0) if source else sum(counts.values())
+        rows = store.listings(source=source, limit=page, offset=offset)
+    else:
+        # 조건을 걸려면 실제 객체로 만들어 봐야 한다. 페이지 단위로 거르면
+        # 앞쪽 페이지가 전부 탈락했을 때 빈 목록만 돌아오므로 넉넉히 읽는다.
+        rows = store.listings(source=source, limit=MATCH_SCAN_LIMIT, offset=0)
+        rows = [
+            row for row in rows
+            if any(p.matches(listing_from_dict(row)) for p in profiles)
+        ]
+        total = len(rows)
+
+    if sort == "discount":
+        rows.sort(key=lambda r: r.get("discount_ratio") or 0.0, reverse=True)
+    elif sort == "price":
+        rows.sort(key=lambda r: r.get("effective_price_krw") or 0)
+    elif sort == "deadline":
+        rows.sort(key=lambda r: r.get("deadline") or "9999")
+
+    items = rows[offset:offset + page] if filtering else rows
+
+    return {
+        "items": items,
+        "total_matched": total,
+        "filters_applied": [p.name for p in profiles] if filtering else [],
+        # 조건 검사는 최근 MATCH_SCAN_LIMIT 건까지만 훑는다. 그 너머에도
+        # 맞는 물건이 있을 수 있다는 뜻이라 화면에서 알려줘야 한다.
+        "scan_truncated": filtering and total >= MATCH_SCAN_LIMIT,
+    }
 
 
 @app.get("/api/notifications")
