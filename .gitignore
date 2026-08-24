@@ -5,7 +5,9 @@ __pycache__/
 venv/
 
 # 런타임 데이터와 비밀
-data/
+# 앞에 / 를 붙여 저장소 루트 기준으로 고정한다. 그냥 'data/' 로 두면
+# 안드로이드 소스의 .../home/data/ 패키지까지 통째로 무시된다.
+/server/data/
 .env
 .env.deploy
 keystore.properties
