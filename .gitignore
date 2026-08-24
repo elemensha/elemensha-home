@@ -1,0 +1,23 @@
+# 파이썬
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 런타임 데이터와 비밀
+data/
+.env
+.env.deploy
+keystore.properties
+
+# 안드로이드
+local.properties
+.gradle/
+build/
+*.apk
+*.jks
+*.keystore
+
+# 에디터
+.idea/
+.vscode/

@@ -1,0 +1,41 @@
+[Unit]
+Description=@APP_NAME@ (elemensha 부동산 알림 API)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=@APP_NAME@
+Group=@APP_NAME@
+WorkingDirectory=@APP_DIR@/server
+EnvironmentFile=@APP_DIR@/.env
+ExecStart=@APP_DIR@/venv/bin/python -m uvicorn app.main:app \
+          --host 127.0.0.1 --port @APP_PORT@ --proxy-headers --forwarded-allow-ips='*'
+
+Restart=always
+RestartSec=5
+
+# 자원 보호. 이 VM은 956MB뿐이고 봇이 이미 240MB를 쓴다.
+# 한도를 넘기면 커널이 이 서비스만 죽이므로 봇 매매는 살아남는다.
+MemoryMax=@APP_MEM@
+CPUQuota=100%
+
+# 하드닝: 자기 데이터 디렉터리 외에는 쓰지 못한다
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=@APP_DIR@/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=@APP_NAME@
+
+[Install]
+WantedBy=multi-user.target
