@@ -64,6 +64,8 @@ jobs:
         # 없으면 서명되지 않은 APK 가 나오므로 최초 1회는 로컬에서 키를 만들어 등록한다.
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             # 시크릿에 줄바꿈이나 CR 이 섞여 들어가면 디코딩 결과가 깨지는데,
@@ -81,7 +83,15 @@ jobs:
             fi
 
             echo "ELEMENSHA_KEYSTORE=$RUNNER_TEMP/elemensha.jks" >> "$GITHUB_ENV"
-            echo "서명 키 준비됨"
+
+            # 비밀번호를 여기서 확인한다. 안 하면 4분 넘게 빌드한 뒤
+            # packageRelease 에서야 "keystore password was incorrect" 를 본다.
+            if keytool -list -keystore "$RUNNER_TEMP/elemensha.jks" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null 2>&1; then
+              echo "서명 키 준비됨 (비밀번호·별칭 확인)"
+            else
+              echo "::error::키스토어를 열지 못했습니다. KEYSTORE_PASSWORD 가 틀렸거나 별칭 $KEY_ALIAS 가 없습니다. 붙여넣을 때 앞뒤 공백이 섞이지 않았는지도 확인하세요."
+              exit 1
+            fi
           else
             echo "::warning::KEYSTORE_BASE64 시크릿이 없어 서명 없이 빌드합니다."
           fi
