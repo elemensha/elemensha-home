@@ -2,7 +2,11 @@ package com.elemensha.home
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
@@ -50,6 +54,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // '알 수 없는 앱 설치'를 켜고 돌아온 경우를 잡는다.
         viewModel.recheckInstallPermission()
+        viewModel.refreshNotificationPermission()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,6 +74,21 @@ private fun AppScaffold(viewModel: AppViewModel) {
     // 서버가 아직 없으면 설정부터 보여준다. 빈 목록만 띄우면 왜 비었는지 모른다.
     var tab by remember { mutableStateOf(if (state.isConfigured) Tab.LISTINGS else Tab.SETTINGS) }
     val snackbar = remember { SnackbarHostState() }
+
+    // Android 13+ 는 알림 권한을 사용자가 허용해야 한다. 없으면 워커가
+    // 돌아도 아무것도 안 뜨는데, 그 사실이 화면에 드러나지 않으면
+    // "알림이 안 온다"로만 보인다.
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { viewModel.refreshNotificationPermission() }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !state.notificationPermission
+        ) {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     LaunchedEffect(state.error) {
         state.error?.let {
@@ -123,6 +143,13 @@ private fun AppScaffold(viewModel: AppViewModel) {
                     onDownloadUpdate = viewModel::downloadUpdate,
                     onInstallUpdate = viewModel::installUpdate,
                     onOpenInstallPermission = viewModel::openInstallPermission,
+                    onToggleNotifications = viewModel::setNotificationsEnabled,
+                    onTestNotification = viewModel::testNotificationNow,
+                    onRequestNotificationPermission = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    },
                 )
             }
         }

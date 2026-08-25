@@ -11,7 +11,9 @@ import com.elemensha.home.data.Listing
 import com.elemensha.home.data.PlanRequest
 import com.elemensha.home.data.PlanResponse
 import com.elemensha.home.data.Prefs
+import com.elemensha.home.notify.Notifier
 import com.elemensha.home.update.Updater
+import com.elemensha.home.work.ListingWorker
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +37,10 @@ data class UiState(
     val plan: PlanResponse? = null,
     val update: Updater.State = Updater.State.Idle,
     val appVersion: String = "",
+    val notificationsEnabled: Boolean = true,
+    /** 시스템 알림 권한. 꺼져 있으면 워커가 돌아도 알림이 안 뜬다. */
+    val notificationPermission: Boolean = true,
+    val lastNotifyResult: String? = null,
     val loading: Boolean = false,
     /** 마지막 실패 사유. 화면에 그대로 띄운다. */
     val error: String? = null,
@@ -58,6 +64,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             apiToken = prefs.apiToken,
             borrower = prefs.borrower,
             appVersion = Updater(app, api).currentVersionName,
+            notificationsEnabled = prefs.notificationsEnabled,
+            notificationPermission = Notifier(app).canPost(),
         )
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -80,6 +88,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         prefs.serverUrl = url
         prefs.apiToken = token
         _state.update { it.copy(serverUrl = prefs.serverUrl, apiToken = prefs.apiToken) }
+        if (prefs.isConfigured && prefs.notificationsEnabled) {
+            ListingWorker.schedule(getApplication())
+        }
         refresh()
     }
 
@@ -246,6 +257,46 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             _state.update {
                 it.copy(update = Updater.State.ReadyToInstall(pending.file, pending.info))
             }
+        }
+    }
+
+    // ---------------------------------------------------------- 알림
+
+    fun setNotificationsEnabled(enabled: Boolean) {
+        prefs.notificationsEnabled = enabled
+        _state.update { it.copy(notificationsEnabled = enabled) }
+        val app = getApplication<Application>()
+        if (enabled && prefs.isConfigured) ListingWorker.schedule(app) else ListingWorker.cancel(app)
+    }
+
+    fun refreshNotificationPermission() {
+        _state.update { it.copy(notificationPermission = Notifier(getApplication()).canPost()) }
+    }
+
+    /** 지금 한 번 확인해서 알림을 띄운다. 설정이 제대로 됐는지 눈으로 보는 용도. */
+    fun testNotificationNow() = launchGuarded {
+        val app = getApplication<Application>()
+        val notifier = Notifier(app)
+        if (!notifier.canPost()) {
+            _state.update { it.copy(lastNotifyResult = "알림 권한이 꺼져 있다") }
+            return@launchGuarded
+        }
+        if (!prefs.notificationBaselineDone) {
+            val n = api.baselineNotifications()
+            prefs.notificationBaselineDone = true
+            _state.update {
+                it.copy(lastNotifyResult = "기준선 설정: 기존 ${n}건은 알리지 않는다. 이후 새 물건부터 알림")
+            }
+            return@launchGuarded
+        }
+        val pending = api.notifications()
+        val posted = notifier.notifyListings(pending)
+        if (posted > 0) api.ackNotifications(pending.mapNotNull { it.dedupeKey })
+        _state.update {
+            it.copy(
+                lastNotifyResult = if (pending.isEmpty()) "새 물건 없음"
+                else "새 물건 ${pending.size}건 알림",
+            )
         }
     }
 

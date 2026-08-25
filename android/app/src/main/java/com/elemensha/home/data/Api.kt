@@ -127,6 +127,10 @@ class Api(
 
     suspend fun plan(request: PlanRequest): PlanResponse = post("/api/plan", request)
 
+    /** 지금까지 쌓인 물건을 '이미 알림'으로 표시한다. 알림을 처음 켤 때 부른다. */
+    suspend fun baselineNotifications(): Int =
+        post<Map<String, String>, Map<String, Int>>("/api/notifications/baseline", emptyMap())["baselined"] ?: 0
+
     suspend fun latestVersion(): AppVersionInfo = get("/api/app/version")
 
     /** 키를 새로 넣었을 때 즉시 확인하는 수동 폴링. */

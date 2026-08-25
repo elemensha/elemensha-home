@@ -11,6 +11,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement as Arr
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,6 +38,9 @@ fun SettingsScreen(
     onDownloadUpdate: () -> Unit,
     onInstallUpdate: (File) -> Unit,
     onOpenInstallPermission: () -> Unit,
+    onToggleNotifications: (Boolean) -> Unit,
+    onTestNotification: () -> Unit,
+    onRequestNotificationPermission: () -> Unit,
 ) {
     var url by remember { mutableStateOf(state.serverUrl) }
     var token by remember { mutableStateOf(state.apiToken) }
@@ -122,6 +129,59 @@ fun SettingsScreen(
                         enabled = !state.loading,
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("지금 수집") }
+                }
+            }
+        }
+
+        item {
+            SectionCard("새 물건 알림") {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arr.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("백그라운드 알림", style = MaterialTheme.typography.bodyLarge)
+                    Switch(
+                        checked = state.notificationsEnabled,
+                        onCheckedChange = onToggleNotifications,
+                    )
+                }
+                Text(
+                    "1시간마다 서버에 새 물건이 있는지 확인한다. 수집은 서버가 " +
+                        "이미 해두므로 배터리 영향은 거의 없다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                if (!state.notificationPermission) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "알림 권한이 꺼져 있다. 켜지 않으면 확인은 돌아도 " +
+                            "알림이 뜨지 않는다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Button(
+                        onClick = onRequestNotificationPermission,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("알림 권한 허용") }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = onTestNotification,
+                    enabled = !state.loading && state.isConfigured,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("지금 확인해서 알림 띄우기") }
+
+                state.lastNotifyResult?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }

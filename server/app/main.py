@@ -382,6 +382,26 @@ async def ack_notifications(body: AckIn, _: None = Depends(require_token)) -> di
     return {"acked": len(body.dedupe_keys)}
 
 
+@app.post("/api/notifications/baseline")
+async def baseline_notifications(_: None = Depends(require_token)) -> dict:
+    """지금까지 쌓인 물건을 전부 '이미 알림' 처리한다.
+
+    알림을 처음 켤 때 부른다. 그러지 않으면 서버가 그동안 모아둔 수천 건이
+    전부 미알림 상태라, 앞으로 올라올 새 물건이 아니라 과거 재고가 알림으로
+    쏟아진다. 기준선을 여기로 잡고 이후 신규분만 알린다.
+    """
+    marked = 0
+    while True:
+        pending = store.pending_notifications(limit=500)
+        if not pending:
+            break
+        store.mark_notified([p["dedupe_key"] for p in pending])
+        marked += len(pending)
+        if len(pending) < 500:
+            break
+    return {"baselined": marked}
+
+
 @app.get("/api/filters")
 async def get_filters(_: None = Depends(require_token)) -> dict:
     return {"items": [f.to_dict() for f in store.filters()]}

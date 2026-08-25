@@ -68,6 +68,16 @@ class Prefs(context: Context) {
             .putStringSet(KEY_NOTIFIED, value.take(MAX_NOTIFIED_KEYS).toSet())
             .apply()
 
+    /** 백그라운드 알림 사용 여부. 기본 켜짐 - 알림이 이 앱의 존재 이유다. */
+    var notificationsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_NOTIFY, true)
+        set(value) = prefs.edit().putBoolean(KEY_NOTIFY, value).apply()
+
+    /** 알림 기준선을 잡았는지. 한 번만 하면 된다. */
+    var notificationBaselineDone: Boolean
+        get() = prefs.getBoolean(KEY_BASELINE, false)
+        set(value) = prefs.edit().putBoolean(KEY_BASELINE, value).apply()
+
     val isConfigured: Boolean get() = serverUrl.isNotBlank()
 
     fun clear() = prefs.edit().clear().apply()
@@ -78,6 +88,8 @@ class Prefs(context: Context) {
         const val KEY_TOKEN = "api_token"
         const val KEY_BORROWER = "borrower"
         const val KEY_NOTIFIED = "notified_keys"
+        const val KEY_NOTIFY = "notifications_enabled"
+        const val KEY_BASELINE = "notification_baseline_done"
         // 무한정 쌓이면 SharedPreferences가 비대해진다.
         const val MAX_NOTIFIED_KEYS = 500
     }
