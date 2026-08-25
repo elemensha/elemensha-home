@@ -253,6 +253,43 @@ private fun ListingCard(listing: Listing, onOpen: () -> Unit, onPlan: () -> Unit
             listing.exclusiveAreaSqm?.let {
                 Text(formatArea(it), style = MaterialTheme.typography.bodySmall)
             }
+
+            // 공매의 핵심 리스크. 인도명령이 없어 점유자가 있으면 협의가
+            // 깨졌을 때 명도소송으로 가고 5~6개월이 걸린다. 토지는 그 대상이
+            // 아예 없어서 성격이 완전히 다르다.
+            if (listing.source == "onbid") {
+                Spacer(Modifier.height(6.dp))
+                if (listing.isLand) {
+                    Text(
+                        "명도 부담 없음 (토지)" +
+                            if (listing.usageMinor.isNotBlank()) " · 지목 ${listing.usageMinor}" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VerifiedGreen,
+                    )
+                    if (listing.needsFarmlandPermit) {
+                        Text(
+                            "농지취득자격증명 필요 — 못 받으면 보증금을 잃는다",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                } else {
+                    Text(
+                        "명도는 매수자 부담 — 공매는 인도명령이 없어 협의가 안 되면 " +
+                            "명도소송(5~6개월)으로 간다",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = WarningAmber,
+                    )
+                }
+            }
+
+            if (listing.caution.isNotBlank()) {
+                Text(
+                    listing.caution,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = WarningAmber,
+                )
+            }
             listing.deadline?.let {
                 Text(
                     "마감 ${formatDate(it)}",

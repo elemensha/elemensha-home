@@ -217,6 +217,15 @@ class OnbidSource(ListingSource):
                 "bidDivNm": pick(item, "bidDivNm") or "",
                 "pbctStatNm": pick(item, "pbctStatNm") or "",
                 "usage": " > ".join(x for x in (mcls, scls) if x),
+                "usage_major": mcls,
+                "usage_minor": scls,
+                # 공매는 인도명령이 없다. 협의가 안 되면 명도소송으로 가야 하고
+                # 5~6개월이 걸린다. 실측상 이 필드는 832건 전부 매수자 부담이라
+                # 물건을 가르는 신호가 아니라 공매 전체의 성질이다.
+                "eviction_burden": pick(item, "evcRsbyTrgtCont") or "",
+                # 전·답은 낙찰 후 농지취득자격증명을 받아야 소유권이 넘어온다.
+                # 못 받으면 보증금을 잃는다.
+                "needs_farmland_permit": scls in ("전", "답", "과수원"),
                 "bid_begin": _parse_onbid_datetime(pick(item, "cltrBidBgngDt")) or "",
                 "land_sqms": pick(item, "landSqms") or "",
                 "bld_sqms": pick(item, "bldSqms") or "",

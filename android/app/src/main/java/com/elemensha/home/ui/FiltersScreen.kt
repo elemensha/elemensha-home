@@ -38,7 +38,11 @@ private val SOURCES = listOf(
     "applyhome" to "청약",
 )
 
-private val TYPES = listOf("아파트", "오피스텔", "연립다세대", "단독주택")
+// 서버가 분류하는 값과 문자열이 정확히 같아야 필터가 걸린다.
+// 토지가 빠져 있어서 수집은 되는데 고를 수가 없었다.
+private val TYPES = listOf(
+    "아파트", "오피스텔", "연립다세대", "단독주택", "토지", "상가", "기타",
+)
 private val SIDOS = listOf("서울특별시", "경기도", "인천광역시")
 
 @OptIn(ExperimentalLayoutApi::class)

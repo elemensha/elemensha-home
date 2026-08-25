@@ -3,6 +3,9 @@ package com.elemensha.home.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * 서버 JSON과 1:1로 맞춘 모델.
@@ -36,8 +39,19 @@ data class Listing(
     val notified: Boolean = false,
     val raw: JsonElement? = null,
 ) {
+    /** 토지는 명도 대상이 없다. 공매에서 이 차이가 크다. */
+    val isLand: Boolean get() = propertyType == "토지"
     /** 화면에 쓸 평 단위. 전용면적 기준이라 분양면적보다 작게 나온다. */
     val pyeong: Double? get() = exclusiveAreaSqm?.let { it / 3.3058 }
+
+    private fun rawText(key: String): String =
+        (raw as? JsonObject)?.get(key)?.jsonPrimitive?.contentOrNull.orEmpty()
+
+    val usageMinor: String get() = rawText("usage_minor")
+    val caution: String get() = rawText("caution")
+    val needsFarmlandPermit: Boolean
+        get() = (raw as? JsonObject)?.get("needs_farmland_permit")
+            ?.jsonPrimitive?.contentOrNull == "true"
 }
 
 @Serializable
