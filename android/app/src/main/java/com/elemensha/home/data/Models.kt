@@ -48,6 +48,8 @@ data class Listing(
         (raw as? JsonObject)?.get(key)?.jsonPrimitive?.contentOrNull.orEmpty()
 
     val usageMinor: String get() = rawText("usage_minor")
+    /** 지번으로 여는 지도. 지적편집도를 켜면 도로 접함을 눈으로 볼 수 있다. */
+    val mapUrl: String get() = rawText("map_url")
     val caution: String get() = rawText("caution")
     val needsFarmlandPermit: Boolean
         get() = (raw as? JsonObject)?.get("needs_farmland_permit")

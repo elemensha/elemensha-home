@@ -191,6 +191,7 @@ private fun EmptyExplanation(state: UiState) {
 
 @Composable
 private fun ListingCard(listing: Listing, onOpen: () -> Unit, onPlan: () -> Unit) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
         colors = CardDefaults.cardColors(
@@ -273,6 +274,12 @@ private fun ListingCard(listing: Listing, onOpen: () -> Unit, onPlan: () -> Unit
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
+                    Text(
+                        "맹지 여부·용도지역은 이 앱이 판정하지 못한다. 지도에서 " +
+                            "도로가 필지에 닿는지 직접 확인할 것.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 } else {
                     Text(
                         "명도는 매수자 부담 — 공매는 인도명령이 없어 협의가 안 되면 " +
@@ -304,7 +311,17 @@ private fun ListingCard(listing: Listing, onOpen: () -> Unit, onPlan: () -> Unit
                     Text("자금계획")
                 }
                 OutlinedButton(onClick = onOpen, modifier = Modifier.weight(1f)) {
-                    Text("원문 보기")
+                    Text("원문")
+                }
+                if (listing.mapUrl.isNotBlank()) {
+                    OutlinedButton(
+                        onClick = {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, listing.mapUrl.toUri())
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("지도") }
                 }
             }
         }

@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from urllib.parse import quote
 
 import httpx
 
@@ -32,6 +33,15 @@ DETAIL_URL = (
     "?cltrNo={cltr}&plnmNo={plnm}&pbctNo={pbct}&pbctCdtnNo={cdtn}&scrnGrpCd=0001"
 )
 SEARCH_URL = "https://www.onbid.co.kr/op/cta/cltrmnmt/collateralRealEstateList.do"
+
+# 지번으로 지도를 연다. 맹지 여부(도로가 필지에 닿는지)는 속성 데이터로
+# 확정할 수 없고 지적도 공간 연산이 필요한데, 지적편집도를 켠 지도에서
+# 눈으로 보는 것이 실질적으로 가장 빠르다.
+#
+# 토지이음(eum.go.kr)은 PNU 로 바로 여는 URL 형식이 공개돼 있지 않다.
+# 시도해 본 luLandDetR.jsp?mode=view|search&pnu=... 는 둘 다 시스템 에러가
+# 난다. 주소를 직접 입력해야 하므로 링크로 걸지 않는다.
+MAP_URL = "https://map.kakao.com/?q="
 
 # 재산유형코드. 실측으로 확인한 값만 넣었다(0001·0003·0006 등은 결과 없음).
 PROPERTY_DIVISIONS = {
@@ -226,6 +236,11 @@ class OnbidSource(ListingSource):
                 # 전·답은 낙찰 후 농지취득자격증명을 받아야 소유권이 넘어온다.
                 # 못 받으면 보증금을 잃는다.
                 "needs_farmland_permit": scls in ("전", "답", "과수원"),
+                # 필지고유번호(19자리). 맹지·용도지역·건축 가능 여부는 이 앱이
+                # 확정할 수 없다(지적도 공간 연산이 필요하다). 대신 해당 필지의
+                # 토지이용계획확인원을 한 번에 열 수 있게 링크를 만들어 둔다.
+                "pnu": pick(item, "ltnoPnu") or "",
+                "map_url": MAP_URL + quote(title) if title else "",
                 "bid_begin": _parse_onbid_datetime(pick(item, "cltrBidBgngDt")) or "",
                 "land_sqms": pick(item, "landSqms") or "",
                 "bld_sqms": pick(item, "bldSqms") or "",
