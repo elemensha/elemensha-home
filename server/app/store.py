@@ -176,6 +176,22 @@ class Store:
             )
             return cursor.rowcount
 
+    def drop_stale(self, source: str, hours: int = 36) -> int:
+        """이번 수집에 안 잡힌 물건을 지운다.
+
+        온비드는 '입찰진행중'만 조회하므로, 물건이 목록에서 사라졌다는 건
+        마감됐다는 뜻이다. last_seen_at 이 갱신되지 않은 것을 걷어낸다.
+        **수집이 성공한 직후에만 부를 것** - 실패한 폴링 뒤에 부르면
+        멀쩡한 물건을 전부 지운다.
+        """
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM listings WHERE source = ?"
+                " AND last_seen_at < datetime('now', ?)",
+                (source, f"-{hours} hours"),
+            )
+            return cursor.rowcount
+
     # ---------- 물건 상세 ----------
 
     def get_detail(self, dedupe_key: str, max_age_days: int = 7) -> dict | None:

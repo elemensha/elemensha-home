@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 
@@ -28,8 +28,18 @@ class PropertyType(str, Enum):
     OTHER = "기타"
 
 
+# 온비드가 주는 입찰 마감 시각은 한국시간이다. 서버는 UTC 로 도니
+# 그대로 비교하면 9시간이 어긋난다.
+KST = timezone(timedelta(hours=9))
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def now_kst_iso() -> str:
+    """'2026-08-27T00:51' 꼴. 마감 문자열과 사전순으로 비교할 수 있다."""
+    return datetime.now(KST).strftime("%Y-%m-%dT%H:%M")
 
 
 @dataclass
@@ -69,6 +79,17 @@ class Listing:
         return f"{self.source.value}:{self.source_id}"
 
     @property
+    def is_expired(self) -> bool:
+        """입찰 마감이 지났는지. 마감일이 없으면 만료로 보지 않는다.
+
+        실거래(rtms)처럼 마감 개념이 없는 소스가 있어서, 값이 없다는 것을
+        '지났다'로 해석하면 통째로 사라진다.
+        """
+        if not self.deadline:
+            return False
+        return self.deadline[:16] < now_kst_iso()
+
+    @property
     def effective_price_krw(self) -> int | None:
         """필터와 수익률 계산이 쓸 '지금 사려면 드는 돈'.
 
@@ -82,6 +103,7 @@ class Listing:
         data["source"] = self.source.value
         data["property_type"] = self.property_type.value
         data["effective_price_krw"] = self.effective_price_krw
+        data["is_expired"] = self.is_expired
         return data
 
 

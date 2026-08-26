@@ -74,7 +74,8 @@ fun ListingsScreen(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        if (state.applyFilters) "조건 적용됨" else "조건 없이 전체",
+                        (if (state.applyFilters) "조건 적용됨" else "조건 없이 전체") +
+                            " · 마감된 물건 숨김",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -314,11 +315,14 @@ private fun ListingCard(
                     color = WarningAmber,
                 )
             }
-            listing.deadline?.let {
+            listing.deadline?.let { dl ->
+                val days = daysUntil(dl)
                 Text(
-                    "마감 ${formatDate(it)}",
+                    "${formatDeadline(dl)} · ${dl.replace('T', ' ')} (한국시간)",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    // 사흘 안쪽이면 눈에 띄게. 준비할 시간이 없다는 뜻이다.
+                    color = if (days != null && days <= 3) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 

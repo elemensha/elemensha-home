@@ -26,7 +26,7 @@ from .finance.roi import ExitScenario, estimate_holding_cost, evaluate_scenario
 from .finance.provenance import Status, load_provenance
 from .finance.rules import load_ruleset
 from .finance.tax import calculate_acquisition_cost
-from .models import FilterProfile, Source
+from .models import FilterProfile, Source, now_kst_iso
 from .sources.onbid import OnbidSource
 from .sources.onbid_detail import fetch_detail
 from .sources.rtms import RtmsSource
@@ -41,6 +41,16 @@ APP_VERSION_CODE = 1
 # 조건 매칭 시 훑어볼 최근 물건 수. 전부 객체로 만들어 비교해야 해서
 # 무제한으로 두면 작은 VM 의 메모리를 밀어낸다.
 MATCH_SCAN_LIMIT = 2000
+
+
+def _expired(row: dict) -> bool:
+    """이미 마감된 물건인지. 마감일이 없으면 만료가 아니다.
+
+    입찰이 끝난 물건이 목록에 절반 가까이 섞여 있었다. 온비드는 마감되면
+    조회에서 빠지는데 DB 에는 남기 때문이다.
+    """
+    deadline = row.get("deadline")
+    return bool(deadline) and str(deadline)[:16] < now_kst_iso()
 
 store = Store(settings.db_path)
 rules = load_ruleset(settings.rules_path)
@@ -143,7 +153,13 @@ async def poller() -> None:
             for name, source in build_sources().items():
                 if now < next_run.get(name, 0):
                     continue
-                await poll_once(name, source, client)
+                result = await poll_once(name, source, client)
+                # 수집에 성공했을 때만 정리한다. 실패 뒤에 지우면 멀쩡한
+                # 물건이 통째로 날아간다.
+                if result.get("ok") and name == "onbid":
+                    dropped = store.drop_stale("onbid", hours=36)
+                    if dropped:
+                        result["dropped"] = dropped
                 next_run[name] = now + intervals.get(name, 3600)
 
             await notify_pending(client)
@@ -303,6 +319,7 @@ async def get_listings(
     offset: int = 0,
     filter_id: int | None = None,
     apply_filters: bool = True,
+    include_expired: bool = False,
     sort: str = "recent",
     _: None = Depends(require_token),
 ) -> dict:
@@ -323,19 +340,27 @@ async def get_listings(
 
     page = min(limit, 500)
 
-    if not filtering:
+    if not filtering and include_expired:
         # 거를 게 없으면 DB 가 세게 한다. 가져온 행 수를 총계로 쓰면
         # limit=1 일 때 "전체 1건" 같은 거짓말이 나온다.
         counts = store.count()
         total = counts.get(source, 0) if source else sum(counts.values())
         rows = store.listings(source=source, limit=page, offset=offset)
+    elif not filtering:
+        # 만료를 걸러야 하면 실제로 훑어봐야 한다.
+        rows = [
+            r for r in store.listings(source=source, limit=MATCH_SCAN_LIMIT, offset=0)
+            if not _expired(r)
+        ]
+        total = len(rows)
     else:
         # 조건을 걸려면 실제 객체로 만들어 봐야 한다. 페이지 단위로 거르면
         # 앞쪽 페이지가 전부 탈락했을 때 빈 목록만 돌아오므로 넉넉히 읽는다.
         rows = store.listings(source=source, limit=MATCH_SCAN_LIMIT, offset=0)
         rows = [
             row for row in rows
-            if any(p.matches(listing_from_dict(row)) for p in profiles)
+            if (include_expired or not _expired(row))
+            and any(p.matches(listing_from_dict(row)) for p in profiles)
         ]
         total = len(rows)
 
@@ -346,7 +371,7 @@ async def get_listings(
     elif sort == "deadline":
         rows.sort(key=lambda r: r.get("deadline") or "9999")
 
-    items = rows[offset:offset + page] if filtering else rows
+    items = rows[offset:offset + page] if (filtering or not include_expired) else rows
 
     return {
         "items": items,
@@ -354,7 +379,8 @@ async def get_listings(
         "filters_applied": [p.name for p in profiles] if filtering else [],
         # 조건 검사는 최근 MATCH_SCAN_LIMIT 건까지만 훑는다. 그 너머에도
         # 맞는 물건이 있을 수 있다는 뜻이라 화면에서 알려줘야 한다.
-        "scan_truncated": filtering and total >= MATCH_SCAN_LIMIT,
+        "scan_truncated": total >= MATCH_SCAN_LIMIT,
+        "expired_hidden": not include_expired,
     }
 
 
@@ -366,6 +392,10 @@ async def get_notifications(_: None = Depends(require_token)) -> dict:
     profiles = store.filters()
     items = []
     for item in store.pending_notifications():
+        # 이미 마감된 물건을 알리는 건 의미가 없다.
+        if _expired(item):
+            store.mark_notified([item["dedupe_key"]])
+            continue
         listing = listing_from_dict(item)
         if profiles and not any(p.matches(listing) for p in profiles):
             continue
