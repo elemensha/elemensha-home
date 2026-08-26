@@ -127,6 +127,10 @@ class Api(
 
     suspend fun plan(request: PlanRequest): PlanResponse = post("/api/plan", request)
 
+    /** 물건 상세. 서버가 캐시하므로 같은 물건을 여러 번 열어도 API 한도를 안 쓴다. */
+    suspend fun detail(dedupeKey: String): DetailResponse =
+        get("/api/listings/" + java.net.URLEncoder.encode(dedupeKey, "UTF-8") + "/detail")
+
     /** 지금까지 쌓인 물건을 '이미 알림'으로 표시한다. 알림을 처음 켤 때 부른다. */
     suspend fun baselineNotifications(): Int =
         post<Map<String, String>, Map<String, Int>>("/api/notifications/baseline", emptyMap())["baselined"] ?: 0

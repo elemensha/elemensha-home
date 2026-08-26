@@ -30,6 +30,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.elemensha.home.UiState
 import com.elemensha.home.data.Listing
+import com.elemensha.home.data.ListingDetail
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 
 /**
  * 물건 목록.
@@ -47,6 +50,7 @@ fun ListingsScreen(
     onSelectFilter: (Int?) -> Unit,
     onShowAll: () -> Unit,
     onSort: (String) -> Unit,
+    onOpenDetail: (Listing) -> Unit,
 ) {
     val context = LocalContext.current
 
@@ -137,6 +141,12 @@ fun ListingsScreen(
                     }
                 },
                 onPlan = { onPlanForListing(listing) },
+                onDetail = { onOpenDetail(listing) },
+                detail = if (state.detailKey ==
+                    (listing.dedupeKey ?: (listing.source + ":" + listing.sourceId))
+                ) state.detail else null,
+                detailLoading = state.detailLoading && state.detailKey ==
+                    (listing.dedupeKey ?: (listing.source + ":" + listing.sourceId)),
             )
         }
 
@@ -190,7 +200,14 @@ private fun EmptyExplanation(state: UiState) {
 }
 
 @Composable
-private fun ListingCard(listing: Listing, onOpen: () -> Unit, onPlan: () -> Unit) {
+private fun ListingCard(
+    listing: Listing,
+    onOpen: () -> Unit,
+    onPlan: () -> Unit,
+    onDetail: () -> Unit,
+    detail: ListingDetail?,
+    detailLoading: Boolean,
+) {
     val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
@@ -324,6 +341,19 @@ private fun ListingCard(listing: Listing, onOpen: () -> Unit, onPlan: () -> Unit
                     ) { Text("지도") }
                 }
             }
+
+            if (listing.source == "onbid") {
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(onClick = onDetail, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (detail != null) "상세 접기" else "권리·점유 상세")
+                }
+            }
+
+            if (detailLoading) {
+                Spacer(Modifier.height(8.dp))
+                CircularProgressIndicator(Modifier.height(20.dp), strokeWidth = 2.dp)
+            }
+            detail?.let { DetailBlock(it) }
         }
     }
 }
@@ -334,4 +364,96 @@ private fun sourceLabel(source: String): String = when (source) {
     "rtms" -> "실거래"
     "applyhome" -> "청약"
     else -> source
+}
+
+
+/**
+ * 물건 상세. 목록 API 에는 없고 상세 API 에만 있는 것들이다.
+ *
+ * 위험 신호를 맨 위에 둔다. 공매에서 낙찰 뒤 곤란해지는 원인은 대부분
+ * 가격이 아니라 여기 적힌 점유·권리 관계다.
+ */
+@Composable
+private fun DetailBlock(detail: ListingDetail) {
+    Spacer(Modifier.height(10.dp))
+    HorizontalDivider()
+    Spacer(Modifier.height(10.dp))
+
+    if (detail.riskFlags.isNotEmpty()) {
+        Text("확인할 것", style = MaterialTheme.typography.titleSmall, color = WarningAmber)
+        detail.riskFlags.forEach {
+            Text("· $it", style = MaterialTheme.typography.bodySmall, color = WarningAmber)
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+
+    listOf(
+        "유의사항" to detail.notes,
+        "이용현황" to detail.usageStatus,
+        "위치·부근" to detail.vicinity,
+    ).forEach { (label, value) ->
+        if (value.isNotBlank()) {
+            Text(label, style = MaterialTheme.typography.labelLarge)
+            Text(
+                value,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+        }
+    }
+
+    if (detail.rights.isNotEmpty()) {
+        Spacer(Modifier.height(4.dp))
+        Text("등기 권리", style = MaterialTheme.typography.labelLarge)
+        detail.rights.forEach { row ->
+            val amount = row["설정액"]?.toLongOrNull()?.takeIf { it > 0 }
+            Text(
+                listOfNotNull(
+                    row["구분"], row["권리자"], row["등기일"],
+                    amount?.let { formatKrw(it) },
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+
+    if (detail.areas.isNotEmpty()) {
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "면적: " + detail.areas.joinToString(", ") {
+                "${it["구분"].orEmpty()} ${it["면적"].orEmpty()}".trim()
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+
+    val extras = listOfNotNull(
+        detail.evictionBurden.takeIf { it.isNotBlank() }?.let { "명도책임 $it" },
+        detail.rentPeriod.takeIf { it.isNotBlank() && it != "-" }?.let { "임대기간 $it" },
+        detail.distributionDeadline.takeIf { it.isNotBlank() && it != "-" }
+            ?.let { "배분요구종기 $it" },
+        detail.delegatingOrg.takeIf { it.isNotBlank() }?.let { "위임 $it" },
+    )
+    if (extras.isNotEmpty()) {
+        Spacer(Modifier.height(6.dp))
+        Text(
+            extras.joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    detail.appraisals.firstOrNull()?.let { a ->
+        val url = a["감정평가서"].orEmpty()
+        if (url.isNotBlank()) {
+            val context = LocalContext.current
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("감정평가서 보기 (${a["평가기관"].orEmpty()})") }
+        }
+    }
 }

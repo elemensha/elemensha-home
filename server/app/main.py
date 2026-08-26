@@ -26,8 +26,9 @@ from .finance.roi import ExitScenario, estimate_holding_cost, evaluate_scenario
 from .finance.provenance import Status, load_provenance
 from .finance.rules import load_ruleset
 from .finance.tax import calculate_acquisition_cost
-from .models import FilterProfile
+from .models import FilterProfile, Source
 from .sources.onbid import OnbidSource
+from .sources.onbid_detail import fetch_detail
 from .sources.rtms import RtmsSource
 from .store import Store
 
@@ -380,6 +381,46 @@ class AckIn(BaseModel):
 async def ack_notifications(body: AckIn, _: None = Depends(require_token)) -> dict:
     store.mark_notified(body.dedupe_keys)
     return {"acked": len(body.dedupe_keys)}
+
+
+@app.get("/api/listings/{dedupe_key:path}/detail")
+async def listing_detail(
+    dedupe_key: str,
+    refresh: bool = False,
+    _: None = Depends(require_token),
+) -> dict:
+    """물건 상세. 사용자가 열었을 때만 가져오고 캐시한다.
+
+    상세 API 는 일일 1,000회뿐이라 목록 전체를 미리 채울 수 없다.
+    """
+    listing = store.find_listing(dedupe_key)
+    if listing is None:
+        raise HTTPException(status_code=404, detail="없는 물건")
+
+    if not refresh:
+        cached = store.get_detail(dedupe_key)
+        if cached is not None:
+            return {"detail": cached, "cached": True}
+
+    if listing.get("source") != Source.ONBID.value:
+        raise HTTPException(status_code=400, detail="온비드 물건만 상세 조회를 지원한다")
+    if not settings.onbid_key:
+        raise HTTPException(status_code=503, detail="온비드 서비스키가 없다")
+
+    # source_id 는 "물건관리번호-공매조건번호" 형태다.
+    source_id = listing.get("source_id", "")
+    cltr_mng_no, _, cdtn_no = source_id.rpartition("-")
+    if not cltr_mng_no:
+        cltr_mng_no, cdtn_no = source_id, ""
+
+    try:
+        async with httpx.AsyncClient() as client:
+            detail = await fetch_detail(client, settings.onbid_key, cltr_mng_no, cdtn_no)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"상세 조회 실패: {exc}") from exc
+
+    store.save_detail(dedupe_key, detail)
+    return {"detail": detail, "cached": False}
 
 
 @app.post("/api/notifications/baseline")

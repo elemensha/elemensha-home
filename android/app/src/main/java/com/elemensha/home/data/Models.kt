@@ -216,6 +216,39 @@ data class PlanResponse(
     val disclaimer: String = "",
 )
 
+// ---------------------------------------------------------------- 물건 상세
+
+@Serializable
+data class DetailRow(val values: Map<String, String> = emptyMap())
+
+/** 온비드 물건상세. 목록에 없는 유의사항·이용현황·권리관계가 여기 있다. */
+@Serializable
+data class ListingDetail(
+    val address: String = "",
+    /** 유의사항. 점유자·분묘·유치권이 적히는 자리다. */
+    val notes: String = "",
+    @SerialName("usage_status") val usageStatus: String = "",
+    val vicinity: String = "",
+    /** 위 세 덩어리에서 뽑아낸 위험 신호. */
+    @SerialName("risk_flags") val riskFlags: List<String> = emptyList(),
+    @SerialName("eviction_burden") val evictionBurden: String = "",
+    @SerialName("rent_period") val rentPeriod: String = "",
+    @SerialName("distribution_deadline") val distributionDeadline: String = "",
+    @SerialName("delegating_org") val delegatingOrg: String = "",
+    @SerialName("first_notice_date") val firstNoticeDate: String = "",
+    val areas: List<Map<String, String>> = emptyList(),
+    val appraisals: List<Map<String, String>> = emptyList(),
+    val rights: List<Map<String, String>> = emptyList(),
+    val photos: List<String> = emptyList(),
+    @SerialName("location_map") val locationMap: String = "",
+)
+
+@Serializable
+data class DetailResponse(
+    val detail: ListingDetail = ListingDetail(),
+    val cached: Boolean = false,
+)
+
 // ---------------------------------------------------------------- 인앱 업데이트
 
 /** 서버가 중계하는 GitHub Releases 최신 정보. */

@@ -41,6 +41,12 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS listing_details (
+    dedupe_key  TEXT PRIMARY KEY,
+    payload     TEXT NOT NULL,
+    fetched_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS poll_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     source     TEXT NOT NULL,
@@ -169,6 +175,39 @@ class Store:
                 (f"-{keep_days} days",),
             )
             return cursor.rowcount
+
+    # ---------- 물건 상세 ----------
+
+    def get_detail(self, dedupe_key: str, max_age_days: int = 7) -> dict | None:
+        """캐시된 상세. 오래되면 없는 것으로 친다.
+
+        상세 API 는 일일 1,000회뿐이라 매번 부르면 안 되고, 그렇다고 영원히
+        캐시하면 유찰로 최저가가 내려간 것을 놓친다.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM listing_details"
+                " WHERE dedupe_key = ? AND fetched_at > datetime('now', ?)",
+                (dedupe_key, f"-{max_age_days} days"),
+            ).fetchone()
+        return json.loads(row["payload"]) if row else None
+
+    def save_detail(self, dedupe_key: str, detail: dict) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO listing_details (dedupe_key, payload, fetched_at)"
+                " VALUES (?, ?, ?)"
+                " ON CONFLICT(dedupe_key) DO UPDATE SET"
+                " payload = excluded.payload, fetched_at = excluded.fetched_at",
+                (dedupe_key, json.dumps(detail, ensure_ascii=False), _now()),
+            )
+
+    def find_listing(self, dedupe_key: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM listings WHERE dedupe_key = ?", (dedupe_key,)
+            ).fetchone()
+        return json.loads(row["payload"]) if row else None
 
     # ---------- 필터 ----------
 

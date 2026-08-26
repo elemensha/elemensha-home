@@ -124,6 +124,7 @@ private fun AppScaffold(viewModel: AppViewModel) {
                     onSelectFilter = viewModel::selectFilter,
                     onShowAll = viewModel::showAllListings,
                     onSort = viewModel::setSort,
+                    onOpenDetail = viewModel::openDetail,
                 )
                 Tab.PLAN -> PlanScreen(
                     state = state,

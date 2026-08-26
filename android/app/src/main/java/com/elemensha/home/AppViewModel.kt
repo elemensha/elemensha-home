@@ -8,6 +8,7 @@ import com.elemensha.home.data.BorrowerProfile
 import com.elemensha.home.data.FilterProfile
 import com.elemensha.home.data.HealthResponse
 import com.elemensha.home.data.Listing
+import com.elemensha.home.data.ListingDetail
 import com.elemensha.home.data.PlanRequest
 import com.elemensha.home.data.PlanResponse
 import com.elemensha.home.data.Prefs
@@ -35,6 +36,10 @@ data class UiState(
     val sort: String = "recent",
     val borrower: BorrowerProfile = BorrowerProfile(),
     val plan: PlanResponse? = null,
+    /** 지금 펼쳐 놓은 물건의 상세. null 이면 아직 안 열었다. */
+    val detailKey: String? = null,
+    val detail: ListingDetail? = null,
+    val detailLoading: Boolean = false,
     val update: Updater.State = Updater.State.Idle,
     val appVersion: String = "",
     val notificationsEnabled: Boolean = true,
@@ -297,6 +302,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 lastNotifyResult = if (pending.isEmpty()) "새 물건 없음"
                 else "새 물건 ${pending.size}건 알림",
             )
+        }
+    }
+
+    // ---------------------------------------------------------- 물건 상세
+
+    fun openDetail(listing: Listing) {
+        val key = listing.dedupeKey ?: (listing.source + ":" + listing.sourceId)
+        if (_state.value.detailKey == key) {
+            // 같은 카드를 다시 누르면 접는다.
+            _state.update { it.copy(detailKey = null, detail = null) }
+            return
+        }
+        _state.update { it.copy(detailKey = key, detail = null, detailLoading = true) }
+        viewModelScope.launch {
+            runCatching { api.detail(key).detail }
+                .onSuccess { d -> _state.update { it.copy(detail = d, detailLoading = false) } }
+                .onFailure { e ->
+                    _state.update {
+                        it.copy(detailLoading = false, error = e.message ?: "상세 조회 실패")
+                    }
+                }
         }
     }
 
