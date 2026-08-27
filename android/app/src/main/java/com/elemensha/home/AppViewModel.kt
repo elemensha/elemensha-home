@@ -10,6 +10,7 @@ import com.elemensha.home.data.HealthResponse
 import com.elemensha.home.data.Listing
 import com.elemensha.home.data.ListingDetail
 import com.elemensha.home.data.PlanRequest
+import com.elemensha.home.data.LandCategoryCount
 import com.elemensha.home.data.RegionCount
 import com.elemensha.home.data.PlanResponse
 import com.elemensha.home.data.Prefs
@@ -33,6 +34,8 @@ data class UiState(
     val filters: List<FilterProfile> = emptyList(),
     /** 서버가 실제로 수집한 지역. 조건 화면의 지역 칩이 이걸로 만들어진다. */
     val regions: List<RegionCount> = emptyList(),
+    /** 수집된 토지 지목. 조건 화면의 지목 칩이 이걸로 만들어진다. */
+    val landCategories: List<LandCategoryCount> = emptyList(),
     /** null 이면 켜져 있는 조건 전체(합집합). */
     val selectedFilterId: Int? = null,
     val applyFilters: Boolean = true,
@@ -105,7 +108,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun refresh() = launchGuarded {
         val health = api.health()
         val filters = api.filters()
-        val regions = runCatching { api.regions() }.getOrDefault(emptyList())
+        val regionData = runCatching { api.regions() }.getOrNull()
         val current = _state.value
         val response = api.listings(
             filterId = current.selectedFilterId,
@@ -116,7 +119,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(
                 health = health,
                 filters = filters,
-                regions = regions,
+                regions = regionData?.items ?: it.regions,
+                landCategories = regionData?.landCategories ?: it.landCategories,
                 listings = response.items,
                 totalMatched = response.totalMatched,
             )

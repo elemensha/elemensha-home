@@ -59,6 +59,10 @@ SALE = "매각"              # dspsMthodNm. 나머지는 임대이며 매물이 
 # 최상단에 올라왔는데 전부 생활형숙박시설·오피스텔이었다.
 SUSPICIOUS_FAILED_BIDS = 5
 
+# 농지. 낙찰 후 농지취득자격증명을 받아야 소유권이 넘어오고,
+# 못 받으면 보증금을 잃는다. 아예 거르고 싶은 사람이 많다.
+FARMLAND_CATEGORIES = ("전", "답", "과수원")
+
 
 def _parse_onbid_datetime(value: str | None) -> str | None:
     """'202608261700' -> '2026-08-26T17:00'. 형식이 다르면 원문을 돌려준다."""
@@ -178,9 +182,19 @@ class OnbidSource(ListingSource):
         scls = pick(item, "cltrUsgSclsCtgrNm") or ""
         title = pick(item, "onbidCltrNm") or cltr_mng_no
 
-        appraised = parse_krw(pick(item, "apslEvlAmt"))
-        min_bid = parse_krw(pick(item, "lowstBidPrcIndctCont", "frstBidPrc"))
+        # 최저입찰가 칸에 숫자가 아니라 '비공개' 라는 글자가 오는 물건이 있다
+        # (기타일반재산 일부). 그대로 두면 값이 없는 것과 구분되지 않아
+        # 화면에 이유 없이 빈칸이 뜬다.
+        raw_min = pick(item, "lowstBidPrcIndctCont") or ""
+        price_undisclosed = bool(raw_min) and not any(c.isdigit() for c in raw_min)
 
+        appraised = parse_krw(pick(item, "apslEvlAmt"))
+        min_bid = None if price_undisclosed else parse_krw(raw_min)
+        if min_bid is None and not price_undisclosed:
+            min_bid = parse_krw(pick(item, "frstBidPrc"))
+
+        # 감정가가 없으면 할인율을 계산할 기준이 없다. 유찰이 쌓여도
+        # '감정가 대비 몇 %'를 말할 수 없는 것은 그래서다.
         discount = None
         if appraised and min_bid and appraised > 0:
             discount = max(0.0, 1 - min_bid / appraised)
@@ -238,7 +252,13 @@ class OnbidSource(ListingSource):
                 "eviction_burden": pick(item, "evcRsbyTrgtCont") or "",
                 # 전·답은 낙찰 후 농지취득자격증명을 받아야 소유권이 넘어온다.
                 # 못 받으면 보증금을 잃는다.
-                "needs_farmland_permit": scls in ("전", "답", "과수원"),
+                "needs_farmland_permit": scls in FARMLAND_CATEGORIES,
+                "price_undisclosed": price_undisclosed,
+                "price_note": (
+                    "최저입찰가 비공개 — 온비드에서 확인해야 한다" if price_undisclosed
+                    else "감정가가 없어 할인율을 계산할 수 없다" if not appraised
+                    else ""
+                ),
                 # 필지고유번호(19자리). 맹지·용도지역·건축 가능 여부는 이 앱이
                 # 확정할 수 없다(지적도 공간 연산이 필요하다). 대신 해당 필지의
                 # 토지이용계획확인원을 한 번에 열 수 있게 링크를 만들어 둔다.

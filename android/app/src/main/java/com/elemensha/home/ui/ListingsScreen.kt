@@ -245,6 +245,14 @@ private fun ListingCard(
                 fontWeight = FontWeight.Bold,
             )
 
+            if (listing.priceNote.isNotBlank()) {
+                Text(
+                    listing.priceNote,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = WarningAmber,
+                )
+            }
+
             listing.appraisedPriceKrw?.let { appraised ->
                 if (listing.minBidPriceKrw != null && listing.minBidPriceKrw < appraised) {
                     Text(

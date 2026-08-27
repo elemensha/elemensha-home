@@ -125,6 +125,11 @@ class FilterProfile:
     max_area_sqm: float = 1000.0
     property_types: list[str] = field(default_factory=lambda: [PropertyType.APARTMENT.value])
 
+    # 토지 지목(대지·임야·전·답 ...). 비우면 전부.
+    land_categories: list[str] = field(default_factory=list)
+    # 농지(전·답·과수원) 제외. 농지취득자격증명을 못 받으면 보증금을 잃는다.
+    exclude_farmland: bool = False
+
     # 실거래 대비 이 비율 이상 싼 것만. None이면 미적용.
     min_discount_ratio: float | None = None
     # 예산은 현금이 아니라 '대출 포함 구매가능액'으로 볼지
@@ -149,6 +154,14 @@ class FilterProfile:
         area = listing.exclusive_area_sqm
         if area is not None and not (self.min_area_sqm <= area <= self.max_area_sqm):
             return False
+
+        # 지목은 raw 에 들어 있다. 토지가 아닌 물건에는 적용하지 않는다.
+        if listing.property_type is PropertyType.LAND:
+            minor = str(listing.raw.get("usage_minor", ""))
+            if self.land_categories and minor not in self.land_categories:
+                return False
+            if self.exclude_farmland and listing.raw.get("needs_farmland_permit"):
+                return False
 
         if self.min_discount_ratio is not None:
             if listing.discount_ratio is None or listing.discount_ratio < self.min_discount_ratio:

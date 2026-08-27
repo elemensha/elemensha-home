@@ -48,6 +48,8 @@ data class Listing(
         (raw as? JsonObject)?.get(key)?.jsonPrimitive?.contentOrNull.orEmpty()
 
     val usageMinor: String get() = rawText("usage_minor")
+    /** 가격·할인율이 비어 있는 이유. 빈칸만 보여주면 버그로 보인다. */
+    val priceNote: String get() = rawText("price_note")
     /** 지번으로 여는 지도. 지적편집도를 켜면 도로 접함을 눈으로 볼 수 있다. */
     val mapUrl: String get() = rawText("map_url")
     val caution: String get() = rawText("caution")
@@ -77,6 +79,10 @@ data class FilterProfile(
     @SerialName("min_area_sqm") val minAreaSqm: Double = 0.0,
     @SerialName("max_area_sqm") val maxAreaSqm: Double = 1000.0,
     @SerialName("property_types") val propertyTypes: List<String> = listOf("아파트"),
+    /** 토지 지목. 비우면 전부. */
+    @SerialName("land_categories") val landCategories: List<String> = emptyList(),
+    /** 농지(전·답·과수원) 제외. 농취증을 못 받으면 보증금을 잃는다. */
+    @SerialName("exclude_farmland") val excludeFarmland: Boolean = false,
     @SerialName("min_discount_ratio") val minDiscountRatio: Double? = null,
     @SerialName("use_loan_capacity_as_budget") val useLoanCapacityAsBudget: Boolean = true,
 )
@@ -220,7 +226,13 @@ data class PlanResponse(
 data class RegionCount(val sido: String = "", val count: Int = 0)
 
 @Serializable
-data class RegionsResponse(val items: List<RegionCount> = emptyList())
+data class LandCategoryCount(val category: String = "", val count: Int = 0)
+
+@Serializable
+data class RegionsResponse(
+    val items: List<RegionCount> = emptyList(),
+    @SerialName("land_categories") val landCategories: List<LandCategoryCount> = emptyList(),
+)
 
 // ---------------------------------------------------------------- 물건 상세
 

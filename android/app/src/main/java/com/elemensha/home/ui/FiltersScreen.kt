@@ -18,6 +18,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -133,6 +134,55 @@ fun FiltersScreen(
                     }
                 }
 
+                // 토지를 고른 경우에만 지목을 보여준다. 다른 종류에는 없는 개념이다.
+                if ("토지" in draft.propertyTypes && state.landCategories.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text("토지 지목", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        if (draft.landCategories.isEmpty()) "선택 안 하면 전부"
+                        else "선택한 지목만",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        state.landCategories.forEach { cat ->
+                            FilterChip(
+                                selected = cat.category in draft.landCategories,
+                                onClick = {
+                                    draft = draft.copy(
+                                        landCategories =
+                                            draft.landCategories.toggle(cat.category)
+                                    )
+                                },
+                                label = { Text("${cat.category} ${cat.count}") },
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("농지 제외", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "전·답·과수원. 낙찰 후 농지취득자격증명을 못 받으면 " +
+                                    "보증금을 잃는다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = draft.excludeFarmland,
+                            onCheckedChange = {
+                                draft = draft.copy(excludeFarmland = it)
+                            },
+                        )
+                    }
+                }
+
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
@@ -196,6 +246,17 @@ fun FiltersScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (filter.landCategories.isNotEmpty() || filter.excludeFarmland) {
+                        Text(
+                            listOfNotNull(
+                                filter.landCategories.takeIf { it.isNotEmpty() }
+                                    ?.joinToString("/"),
+                                if (filter.excludeFarmland) "농지 제외" else null,
+                            ).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = WarningAmber,
+                        )
+                    }
                     Text(
                         "${filter.sources.joinToString(", ")} · " +
                             filter.propertyTypes.joinToString(", "),

@@ -480,8 +480,8 @@ async def baseline_notifications(_: None = Depends(require_token)) -> dict:
 
 @app.get("/api/regions")
 async def get_regions(_: None = Depends(require_token)) -> dict:
-    """수집된 지역 목록. 앱의 지역 선택 칩이 이걸로 만들어진다."""
-    return {"items": store.regions()}
+    """수집된 지역과 토지 지목. 앱의 선택 칩이 이걸로 만들어진다."""
+    return {"items": store.regions(), "land_categories": store.land_categories()}
 
 
 @app.get("/api/filters")

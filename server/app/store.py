@@ -207,6 +207,17 @@ class Store:
             ).fetchall()
         return [{"sido": r["sido"], "count": r["n"]} for r in rows if r["sido"]]
 
+    def land_categories(self) -> list[dict]:
+        """수집된 토지의 지목과 건수. 앱의 지목 칩이 이걸로 만들어진다."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT json_extract(payload, '$.raw.usage_minor') AS cat,"
+                " COUNT(*) AS n FROM listings"
+                " WHERE json_extract(payload, '$.property_type') = '토지'"
+                " GROUP BY cat ORDER BY n DESC"
+            ).fetchall()
+        return [{"category": r["cat"], "count": r["n"]} for r in rows if r["cat"]]
+
     # ---------- 물건 상세 ----------
 
     def get_detail(self, dedupe_key: str, max_age_days: int = 7) -> dict | None:
