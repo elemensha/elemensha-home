@@ -3,14 +3,14 @@
 공공데이터포털 '한국자산관리공사_차세대 온비드 부동산 물건목록 조회서비스'
 (데이터셋 15157207)를 쓴다. 구 API(openapi.onbid.co.kr)는 개편으로 내려갔다.
 
-**일일 한도가 1,000회뿐이다.** 전체 압류재산만 55,086건이라 필터 없이
-페이지네이션하면 하루치 할당량을 한 번에 태운다. 그래서 두 가지를 건다.
+**일일 한도가 1,000회뿐이다.** 그래서 `pbctStatCd=0002`(입찰진행중)로
+좁힌다. 이것만으로 55,086건이 수백 건으로 줄어든다.
 
-- `lctnSdnm` (시도명) - 실측으로 동작 확인. 55,086 -> 서울 4,528
-- `pbctStatCd=0002` (입찰진행중) - 이미 끝난 물건을 걷어낸다
+시도별로 나눠 부르지 않는다. 실측 결과 전국을 통째로 페이지네이션하는 쪽이
+**호출이 더 적다** - 시도 루프는 결과가 0건인 조합에도 1회씩 쓰기 때문이다.
+(전국 9장 vs 수도권 시도 루프 12회)
 
-수도권 3개 시도 x 재산유형 5종 = 1회 폴링 약 18회 호출. 시간당 돌려도
-하루 432회로 여유가 있다.
+지역은 받아온 뒤 `lctnSdnm` 으로 거른다. `target_sido` 를 비우면 전국이다.
 
 필드명은 2026-08-25에 실제 응답을 찍어 확인했다.
 """
@@ -81,14 +81,15 @@ class OnbidSource(ListingSource):
         service_key: str,
         target_sido: list[str] | None = None,
         divisions: list[str] | None = None,
-        max_pages: int = 6,
+        max_pages: int = 30,
         rows_per_page: int = 100,
         timeout: float = 25.0,
         only_in_progress: bool = True,
         sale_only: bool = True,
     ) -> None:
         super().__init__(service_key, timeout)
-        self.target_sido = target_sido or ["서울특별시", "경기도", "인천광역시"]
+        # 비우면 전국. 지역은 API 파라미터가 아니라 받아온 뒤 거른다.
+        self.target_sido = target_sido or []
         self.divisions = divisions or list(PROPERTY_DIVISIONS)
         self.max_pages = max_pages
         self.rows_per_page = rows_per_page
@@ -103,19 +104,18 @@ class OnbidSource(ListingSource):
         errors: list[str] = []
 
         for division in self.divisions:
-            for sido in self.target_sido:
-                try:
-                    listings.extend(await self._fetch_slice(client, division, sido))
-                except Exception as exc:
-                    # 한 조합이 실패해도 나머지는 계속 모은다. 전부 실패하면 아래에서 드러난다.
-                    errors.append(f"{PROPERTY_DIVISIONS.get(division, division)}/{sido}: {exc}")
+            try:
+                listings.extend(await self._fetch_slice(client, division))
+            except Exception as exc:
+                # 한 유형이 실패해도 나머지는 계속 모은다. 전부 실패하면 아래에서 드러난다.
+                errors.append(f"{PROPERTY_DIVISIONS.get(division, division)}: {exc}")
 
         if not listings and errors:
             raise RuntimeError("온비드 조회가 전부 실패했다 - " + "; ".join(errors[:3]))
         return listings
 
     async def _fetch_slice(
-        self, client: httpx.AsyncClient, division: str, sido: str
+        self, client: httpx.AsyncClient, division: str
     ) -> list[Listing]:
         collected: list[Listing] = []
         for page in range(1, self.max_pages + 1):
@@ -125,7 +125,6 @@ class OnbidSource(ListingSource):
                 "pageNo": page,
                 "prptDivCd": division,
                 "pvctTrgtYn": "N",
-                "lctnSdnm": sido,
             }
             if self.only_in_progress:
                 params["pbctStatCd"] = BID_IN_PROGRESS
@@ -162,6 +161,10 @@ class OnbidSource(ListingSource):
         cltr_mng_no = pick(item, "cltrMngNo")
         cdtn_no = pick(item, "pbctCdtnNo") or ""
         if not cltr_mng_no:
+            return None
+
+        sido = pick(item, "lctnSdnm") or ""
+        if self.target_sido and sido and sido not in self.target_sido:
             return None
 
         # 임대 물건은 최저입찰가가 '임대료'라서 매매가와 섞이면 안 된다.
@@ -204,7 +207,7 @@ class OnbidSource(ListingSource):
             source_id=f"{cltr_mng_no}-{cdtn_no}" if cdtn_no else cltr_mng_no,
             title=title,
             url=url,
-            sido=pick(item, "lctnSdnm") or "",
+            sido=sido,
             sigungu=pick(item, "lctnSggnm") or "",
             address=title,   # onbidCltrNm 자체가 전체 주소 + 물건 표시다
             property_type=self._classify(mcls, scls, title),

@@ -78,7 +78,12 @@ def build_sources() -> dict[str, object]:
     if settings.onbid_key:
         available["onbid"] = OnbidSource(settings.onbid_key, target_sido=settings.target_sido)
     if settings.rtms_key:
-        available["rtms"] = RtmsSource(settings.rtms_key, sido=settings.target_sido)
+        # 실거래가는 시군구 코드로만 조회된다. 전국은 법정동코드 250여 개가
+        # 필요하고 1회 폴링에 1,500회를 쓰므로 아직 수도권으로 둔다.
+        available["rtms"] = RtmsSource(
+            settings.rtms_key,
+            sido=settings.target_sido or ["서울특별시", "경기도", "인천광역시"],
+        )
     return available
 
 
@@ -471,6 +476,12 @@ async def baseline_notifications(_: None = Depends(require_token)) -> dict:
         if len(pending) < 500:
             break
     return {"baselined": marked}
+
+
+@app.get("/api/regions")
+async def get_regions(_: None = Depends(require_token)) -> dict:
+    """수집된 지역 목록. 앱의 지역 선택 칩이 이걸로 만들어진다."""
+    return {"items": store.regions()}
 
 
 @app.get("/api/filters")

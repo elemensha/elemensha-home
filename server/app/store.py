@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -192,6 +192,21 @@ class Store:
             )
             return cursor.rowcount
 
+    def regions(self) -> list[dict]:
+        """실제로 수집된 시도와 건수.
+
+        시도 목록을 앱에 하드코딩하면 행정구역 개편을 놓친다. 실측에서
+        '전남광주통합특별시' 같은 이름이 나왔는데 미리 적어 뒀다면 그 지역
+        물건이 통째로 필터에서 빠졌을 것이다.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT json_extract(payload, '$.sido') AS sido, COUNT(*) AS n"
+                " FROM listings WHERE sido IS NOT NULL AND sido != ''"
+                " GROUP BY sido ORDER BY n DESC"
+            ).fetchall()
+        return [{"sido": r["sido"], "count": r["n"]} for r in rows if r["sido"]]
+
     # ---------- 물건 상세 ----------
 
     def get_detail(self, dedupe_key: str, max_age_days: int = 7) -> dict | None:
@@ -318,11 +333,16 @@ class Store:
 
 
 def listing_from_dict(data: dict) -> Listing:
-    """저장된 payload를 다시 Listing으로. 계산 모듈에 넘길 때 쓴다."""
-    data = dict(data)
-    data.pop("effective_price_krw", None)
-    data.pop("dedupe_key", None)
-    data.pop("notified", None)
-    data["source"] = Source(data["source"])
-    data["property_type"] = PropertyType(data["property_type"])
-    return Listing(**data)
+    """저장된 payload를 다시 Listing으로. 계산 모듈에 넘길 때 쓴다.
+
+    `to_dict()` 는 화면 편의를 위해 파생 필드(effective_price_krw, is_expired
+    등)를 얹는다. 그것들을 그대로 생성자에 넘기면 TypeError 로 죽는데,
+    파생 필드를 하나 추가할 때마다 여기에 제외 목록을 늘리는 방식은 결국
+    빠뜨린다. 실제로 is_expired 를 추가했다가 목록 조회가 통째로 500 이 났다.
+    그래서 **아는 필드만 골라 넘긴다.**
+    """
+    known = {f.name for f in fields(Listing)}
+    kwargs = {k: v for k, v in data.items() if k in known}
+    kwargs["source"] = Source(kwargs["source"])
+    kwargs["property_type"] = PropertyType(kwargs["property_type"])
+    return Listing(**kwargs)

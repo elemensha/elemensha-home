@@ -115,6 +115,10 @@ class Api(
         )
     }
 
+    /** 실제로 수집된 지역. 앱이 시도 목록을 하드코딩하지 않게 한다. */
+    suspend fun regions(): List<RegionCount> =
+        get<RegionsResponse>("/api/regions").items
+
     suspend fun filters(): List<FilterProfile> =
         get<FiltersResponse>("/api/filters").items
 

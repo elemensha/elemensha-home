@@ -10,6 +10,7 @@ import com.elemensha.home.data.HealthResponse
 import com.elemensha.home.data.Listing
 import com.elemensha.home.data.ListingDetail
 import com.elemensha.home.data.PlanRequest
+import com.elemensha.home.data.RegionCount
 import com.elemensha.home.data.PlanResponse
 import com.elemensha.home.data.Prefs
 import com.elemensha.home.notify.Notifier
@@ -30,6 +31,8 @@ data class UiState(
     /** 조건을 통과한 전체 건수. listings 는 그중 앞부분만 담는다. */
     val totalMatched: Int = 0,
     val filters: List<FilterProfile> = emptyList(),
+    /** 서버가 실제로 수집한 지역. 조건 화면의 지역 칩이 이걸로 만들어진다. */
+    val regions: List<RegionCount> = emptyList(),
     /** null 이면 켜져 있는 조건 전체(합집합). */
     val selectedFilterId: Int? = null,
     val applyFilters: Boolean = true,
@@ -102,6 +105,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun refresh() = launchGuarded {
         val health = api.health()
         val filters = api.filters()
+        val regions = runCatching { api.regions() }.getOrDefault(emptyList())
         val current = _state.value
         val response = api.listings(
             filterId = current.selectedFilterId,
@@ -112,6 +116,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(
                 health = health,
                 filters = filters,
+                regions = regions,
                 listings = response.items,
                 totalMatched = response.totalMatched,
             )

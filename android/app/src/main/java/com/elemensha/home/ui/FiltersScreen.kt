@@ -43,7 +43,6 @@ private val SOURCES = listOf(
 private val TYPES = listOf(
     "아파트", "오피스텔", "연립다세대", "단독주택", "토지", "상가", "기타",
 )
-private val SIDOS = listOf("서울특별시", "경기도", "인천광역시")
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -52,7 +51,8 @@ fun FiltersScreen(
     onSave: (FilterProfile) -> Unit,
     onDelete: (Int) -> Unit,
 ) {
-    var draft by remember { mutableStateOf(FilterProfile()) }
+    // 지역을 비워 두면 전국이 된다.
+    var draft by remember { mutableStateOf(FilterProfile(sido = emptyList())) }
     var minText by remember { mutableStateOf("") }
     var maxText by remember { mutableStateOf("50000") }
 
@@ -90,12 +90,29 @@ fun FiltersScreen(
 
                 Spacer(Modifier.height(12.dp))
                 Text("지역", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    if (draft.sido.isEmpty()) "선택 안 하면 전국" else "선택한 지역만",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                // 시도 목록은 서버가 실제로 수집한 것에서 온다. 하드코딩하면
+                // '전남광주통합특별시' 같은 개편 이름을 놓친다.
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    SIDOS.forEach { value ->
+                    state.regions.forEach { region ->
                         FilterChip(
-                            selected = value in draft.sido,
-                            onClick = { draft = draft.copy(sido = draft.sido.toggle(value)) },
-                            label = { Text(value.removeSuffix("특별시").removeSuffix("광역시")) },
+                            selected = region.sido in draft.sido,
+                            onClick = {
+                                draft = draft.copy(sido = draft.sido.toggle(region.sido))
+                            },
+                            label = {
+                                Text(
+                                    region.sido
+                                        .removeSuffix("특별자치도")
+                                        .removeSuffix("특별자치시")
+                                        .removeSuffix("특별시")
+                                        .removeSuffix("광역시") + " ${region.count}"
+                                )
+                            },
                         )
                     }
                 }
@@ -146,7 +163,7 @@ fun FiltersScreen(
                                     .takeIf { it > 0 } ?: 2_000_000_000,
                             )
                         )
-                        draft = FilterProfile()
+                        draft = FilterProfile(sido = emptyList())
                     },
                     enabled = !state.loading && state.isConfigured,
                     modifier = Modifier.fillMaxWidth(),

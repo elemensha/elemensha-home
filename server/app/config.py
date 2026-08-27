@@ -45,8 +45,10 @@ class Settings:
     applyhome_key: str = field(default_factory=lambda: os.getenv("APPLYHOME_SERVICE_KEY", ""))
     court_key: str = field(default_factory=lambda: os.getenv("COURT_API_KEY", ""))
 
+    # 비우면 전국. 온비드는 전국을 통째로 훑는 쪽이 시도별로 나눠 부르는
+    # 것보다 호출이 적어서(9장 vs 12회) 기본값을 전국으로 둔다.
     target_sido: list[str] = field(
-        default_factory=lambda: _env_list("TARGET_SIDO", ["서울특별시", "경기도", "인천광역시"])
+        default_factory=lambda: _env_list("TARGET_SIDO", [])
     )
 
     # 소스별 폴링 주기(분).
@@ -54,7 +56,7 @@ class Settings:
     # 하루 240회라 여유가 있지만, 지역을 넓히면 금방 닿는다.
     # 실거래가는 시군구x월 조합이라 1회 폴링에 460여 건이 나가지만 한도가
     # 10,000회라 12시간 주기면 충분하다.
-    onbid_interval_min: int = field(default_factory=lambda: _env_int("ONBID_INTERVAL_MIN", 60))
+    onbid_interval_min: int = field(default_factory=lambda: _env_int("ONBID_INTERVAL_MIN", 90))
     rtms_interval_min: int = field(default_factory=lambda: _env_int("RTMS_INTERVAL_MIN", 720))
     applyhome_interval_min: int = field(
         default_factory=lambda: _env_int("APPLYHOME_INTERVAL_MIN", 360)

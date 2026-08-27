@@ -216,6 +216,12 @@ data class PlanResponse(
     val disclaimer: String = "",
 )
 
+@Serializable
+data class RegionCount(val sido: String = "", val count: Int = 0)
+
+@Serializable
+data class RegionsResponse(val items: List<RegionCount> = emptyList())
+
 // ---------------------------------------------------------------- 물건 상세
 
 @Serializable
