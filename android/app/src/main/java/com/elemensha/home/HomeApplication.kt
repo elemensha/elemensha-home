@@ -15,8 +15,9 @@ class HomeApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         Notifier(this).ensureChannel()
-        if (Prefs(this).let { it.isConfigured && it.notificationsEnabled }) {
-            ListingWorker.schedule(this)
+        val prefs = Prefs(this)
+        if (prefs.isConfigured && prefs.notificationsEnabled) {
+            ListingWorker.schedule(this, prefs.notifyHour)
         }
     }
 }

@@ -11,6 +11,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Switch
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement as Arr
@@ -29,6 +32,7 @@ import com.elemensha.home.UiState
 import com.elemensha.home.update.Updater
 import java.io.File
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     state: UiState,
@@ -39,6 +43,7 @@ fun SettingsScreen(
     onInstallUpdate: (File) -> Unit,
     onOpenInstallPermission: () -> Unit,
     onToggleNotifications: (Boolean) -> Unit,
+    onSetNotifyHour: (Int) -> Unit,
     onTestNotification: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
 ) {
@@ -147,11 +152,30 @@ fun SettingsScreen(
                     )
                 }
                 Text(
-                    "1시간마다 서버에 새 물건이 있는지 확인한다. 수집은 서버가 " +
-                        "이미 해두므로 배터리 영향은 거의 없다.",
+                    "하루 한 번 정해진 시각에 확인한다. 수집은 서버가 미리 " +
+                        "해두므로 배터리 영향은 거의 없다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+
+                if (state.notificationsEnabled) {
+                    Spacer(Modifier.height(10.dp))
+                    Text("알림 시각", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arr.spacedBy(6.dp)) {
+                        listOf(6, 7, 8, 9, 12, 18, 21).forEach { hour ->
+                            FilterChip(
+                                selected = state.notifyHour == hour,
+                                onClick = { onSetNotifyHour(hour) },
+                                label = { Text("%02d시".format(hour)) },
+                            )
+                        }
+                    }
+                    Text(
+                        "기기가 잠들어 있으면 깨어난 뒤로 조금 밀릴 수 있다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
 
                 if (!state.notificationPermission) {
                     Spacer(Modifier.height(8.dp))

@@ -42,6 +42,10 @@ APP_VERSION_CODE = 1
 # 무제한으로 두면 작은 VM 의 메모리를 밀어낸다.
 MATCH_SCAN_LIMIT = 6000
 
+# 한 번에 넘길 알림 최대 건수. 앱이 하루 한 번 가져가므로 하루치가
+# 한꺼번에 온다. 개별 알림이 아니라 요약으로 묶이니 많아도 괜찮다.
+NOTIFY_BATCH = 300
+
 
 def _expired(row: dict) -> bool:
     """이미 마감된 물건인지. 마감일이 없으면 만료가 아니다.
@@ -409,7 +413,9 @@ async def get_notifications(_: None = Depends(require_token)) -> dict:
 
     profiles = store.filters()
     items = []
-    for item in store.pending_notifications():
+    # 하루 한 번만 확인하므로 하루치가 한꺼번에 온다. 50건으로 끊으면
+    # 나머지는 다음 날로 밀리므로 넉넉히 읽는다.
+    for item in store.pending_notifications(limit=NOTIFY_BATCH):
         # 이미 마감된 물건을 알리는 건 의미가 없다.
         if _expired(item):
             store.mark_notified([item["dedupe_key"]])
@@ -418,7 +424,7 @@ async def get_notifications(_: None = Depends(require_token)) -> dict:
         if profiles and not any(p.matches(listing) for p in profiles):
             continue
         items.append(item)
-    return {"items": items}
+    return {"items": items, "total": len(items)}
 
 
 class AckIn(BaseModel):

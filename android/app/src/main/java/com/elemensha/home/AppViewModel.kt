@@ -49,6 +49,8 @@ data class UiState(
     val update: Updater.State = Updater.State.Idle,
     val appVersion: String = "",
     val notificationsEnabled: Boolean = true,
+    /** 알림을 받을 시각(0~23시). 하루 한 번. */
+    val notifyHour: Int = 7,
     /** 시스템 알림 권한. 꺼져 있으면 워커가 돌아도 알림이 안 뜬다. */
     val notificationPermission: Boolean = true,
     val lastNotifyResult: String? = null,
@@ -76,6 +78,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             borrower = prefs.borrower,
             appVersion = Updater(app, api).currentVersionName,
             notificationsEnabled = prefs.notificationsEnabled,
+            notifyHour = prefs.notifyHour,
             notificationPermission = Notifier(app).canPost(),
         )
     )
@@ -100,7 +103,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         prefs.apiToken = token
         _state.update { it.copy(serverUrl = prefs.serverUrl, apiToken = prefs.apiToken) }
         if (prefs.isConfigured && prefs.notificationsEnabled) {
-            ListingWorker.schedule(getApplication())
+            ListingWorker.schedule(getApplication(), prefs.notifyHour)
         }
         refresh()
     }
@@ -280,7 +283,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         prefs.notificationsEnabled = enabled
         _state.update { it.copy(notificationsEnabled = enabled) }
         val app = getApplication<Application>()
-        if (enabled && prefs.isConfigured) ListingWorker.schedule(app) else ListingWorker.cancel(app)
+        if (enabled && prefs.isConfigured) {
+            ListingWorker.schedule(app, prefs.notifyHour)
+        } else {
+            ListingWorker.cancel(app)
+        }
+    }
+
+    fun setNotifyHour(hour: Int) {
+        prefs.notifyHour = hour
+        _state.update { it.copy(notifyHour = prefs.notifyHour) }
+        if (prefs.notificationsEnabled && prefs.isConfigured) {
+            ListingWorker.schedule(getApplication(), prefs.notifyHour)
+        }
     }
 
     fun refreshNotificationPermission() {

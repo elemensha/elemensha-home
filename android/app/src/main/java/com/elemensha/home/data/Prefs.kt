@@ -73,6 +73,11 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean(KEY_NOTIFY, true)
         set(value) = prefs.edit().putBoolean(KEY_NOTIFY, value).apply()
 
+    /** 알림을 받을 시각(0~23시). 하루 한 번 이 시각에 확인한다. */
+    var notifyHour: Int
+        get() = prefs.getInt(KEY_NOTIFY_HOUR, 7)
+        set(value) = prefs.edit().putInt(KEY_NOTIFY_HOUR, value.coerceIn(0, 23)).apply()
+
     /** 알림 기준선을 잡았는지. 한 번만 하면 된다. */
     var notificationBaselineDone: Boolean
         get() = prefs.getBoolean(KEY_BASELINE, false)
@@ -90,6 +95,7 @@ class Prefs(context: Context) {
         const val KEY_NOTIFIED = "notified_keys"
         const val KEY_NOTIFY = "notifications_enabled"
         const val KEY_BASELINE = "notification_baseline_done"
+        const val KEY_NOTIFY_HOUR = "notify_hour"
         // 무한정 쌓이면 SharedPreferences가 비대해진다.
         const val MAX_NOTIFIED_KEYS = 500
     }

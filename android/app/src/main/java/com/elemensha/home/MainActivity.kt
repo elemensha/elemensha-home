@@ -145,6 +145,7 @@ private fun AppScaffold(viewModel: AppViewModel) {
                     onInstallUpdate = viewModel::installUpdate,
                     onOpenInstallPermission = viewModel::openInstallPermission,
                     onToggleNotifications = viewModel::setNotificationsEnabled,
+                    onSetNotifyHour = viewModel::setNotifyHour,
                     onTestNotification = viewModel::testNotificationNow,
                     onRequestNotificationPermission = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

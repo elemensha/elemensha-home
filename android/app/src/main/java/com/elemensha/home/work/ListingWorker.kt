@@ -65,18 +65,32 @@ class ListingWorker(
     companion object {
         private const val NAME = "listing-poll"
 
-        fun schedule(context: Context, intervalMinutes: Long = 60) {
-            val request = PeriodicWorkRequestBuilder<ListingWorker>(
-                intervalMinutes.coerceAtLeast(15), TimeUnit.MINUTES,
-            ).setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build()
-            ).build()
+        /**
+         * 매일 `hour` 시에 확인하도록 예약한다.
+         *
+         * 첫 실행까지의 지연을 다음 `hour` 시까지로 잡고 24시간 주기를 건다.
+         * 기기가 잠들어 있으면 WorkManager 가 깨어난 뒤로 미루므로 정각에
+         * 딱 맞지는 않는다. 하루 한 번이면 그 정도로 충분하다.
+         */
+        fun schedule(context: Context, hour: Int = 7) {
+            val now = java.time.ZonedDateTime.now()
+            var next = now.withHour(hour.coerceIn(0, 23))
+                .withMinute(0).withSecond(0).withNano(0)
+            if (!next.isAfter(now)) next = next.plusDays(1)
+            val delay = java.time.Duration.between(now, next).toMinutes()
 
-            // KEEP: 앱을 열 때마다 주기가 초기화되면 영영 안 돈다.
+            val request = PeriodicWorkRequestBuilder<ListingWorker>(1, TimeUnit.DAYS)
+                .setInitialDelay(delay, TimeUnit.MINUTES)
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
+                )
+                .build()
+
+            // UPDATE: 시각을 바꾸면 다시 걸려야 한다. KEEP 이면 옛 시각이 남는다.
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                NAME, ExistingPeriodicWorkPolicy.KEEP, request,
+                NAME, ExistingPeriodicWorkPolicy.UPDATE, request,
             )
         }
 
