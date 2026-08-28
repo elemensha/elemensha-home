@@ -101,6 +101,7 @@ class OnbidSource(ListingSource):
         timeout: float = 30.0,
         upcoming_days: int = 30,
         sale_only: bool = True,
+        include_upcoming: bool = True,
     ) -> None:
         super().__init__(service_key, timeout)
         # 비우면 전국. 지역은 API 파라미터가 아니라 받아온 뒤 거른다.
@@ -112,6 +113,8 @@ class OnbidSource(ListingSource):
         # 넓힐수록 페이지가 늘어 한도를 먹는다.
         self.upcoming_days = upcoming_days
         self.sale_only = sale_only
+        # 준비중까지 볼지. 진행중만 보면 호출이 20분의 1로 줄어 자주 돌 수 있다.
+        self.include_upcoming = include_upcoming
 
     async def fetch(self, client: httpx.AsyncClient) -> list[Listing]:
         return [x async for x in self.stream(client)]
@@ -134,7 +137,9 @@ class OnbidSource(ListingSource):
                     yield listing
             except Exception as exc:
                 errors.append(f"{name}/진행중: {exc}")
-            # 준비중은 임박한 뒷부분만 읽는다.
+            # 준비중은 임박한 뒷부분만 읽는다. 호출이 많아 매번 돌지 않는다.
+            if not self.include_upcoming:
+                continue
             try:
                 async for listing in self._stream_upcoming(client, division, horizon):
                     yielded += 1
@@ -306,6 +311,12 @@ class OnbidSource(ListingSource):
             appraised_price_krw=appraised,
             min_bid_price_krw=min_bid,
             deadline=_parse_onbid_datetime(pick(item, "cltrBidEndDt")),
+            bid_start=_parse_onbid_datetime(pick(item, "cltrBidBgngDt")),
+            bid_status=(
+                "진행중" if pick(item, "pbctStatCd") == BID_IN_PROGRESS
+                else "준비중" if pick(item, "pbctStatCd") == BID_PENDING
+                else (pick(item, "pbctStatNm") or "")
+            ),
             failed_bid_count=failed_count,
             market_price_krw=appraised,
             discount_ratio=discount,

@@ -40,6 +40,8 @@ data class UiState(
     val selectedFilterId: Int? = null,
     val applyFilters: Boolean = true,
     val sort: String = "recent",
+    /** 지금 입찰할 수 있는 물건만 볼지. */
+    val biddableOnly: Boolean = false,
     val borrower: BorrowerProfile = BorrowerProfile(),
     val plan: PlanResponse? = null,
     /** 지금 펼쳐 놓은 물건의 상세. null 이면 아직 안 열었다. */
@@ -117,6 +119,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             filterId = current.selectedFilterId,
             applyFilters = current.applyFilters,
             sort = current.sort,
+            biddableOnly = current.biddableOnly,
         )
         _state.update {
             it.copy(
@@ -137,10 +140,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             filterId = current.selectedFilterId,
             applyFilters = current.applyFilters,
             sort = current.sort,
+            biddableOnly = current.biddableOnly,
         )
         _state.update {
             it.copy(listings = response.items, totalMatched = response.totalMatched)
         }
+    }
+
+    fun setBiddableOnly(on: Boolean) {
+        _state.update { it.copy(biddableOnly = on) }
+        reloadListings()
     }
 
     fun selectFilter(id: Int?) {
@@ -226,6 +235,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             filterId = current.selectedFilterId,
             applyFilters = current.applyFilters,
             sort = current.sort,
+            biddableOnly = current.biddableOnly,
         )
         _state.update {
             it.copy(

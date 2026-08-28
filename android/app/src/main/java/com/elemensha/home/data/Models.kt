@@ -32,6 +32,11 @@ data class Listing(
     @SerialName("asking_price_krw") val askingPriceKrw: Long? = null,
     @SerialName("effective_price_krw") val effectivePriceKrw: Long? = null,
     val deadline: String? = null,
+    @SerialName("bid_start") val bidStart: String? = null,
+    /** "진행중" | "준비중" */
+    @SerialName("bid_status") val bidStatus: String = "",
+    /** 지금 당장 입찰할 수 있는지. 서버가 한국시간으로 판정한다. */
+    @SerialName("is_biddable") val isBiddable: Boolean = false,
     @SerialName("failed_bid_count") val failedBidCount: Int = 0,
     @SerialName("market_price_krw") val marketPriceKrw: Long? = null,
     @SerialName("discount_ratio") val discountRatio: Double? = null,
@@ -83,6 +88,8 @@ data class FilterProfile(
     @SerialName("land_categories") val landCategories: List<String> = emptyList(),
     /** 농지(전·답·과수원) 제외. 농취증을 못 받으면 보증금을 잃는다. */
     @SerialName("exclude_farmland") val excludeFarmland: Boolean = false,
+    /** 지금 입찰할 수 있는 물건만. */
+    @SerialName("biddable_only") val biddableOnly: Boolean = false,
     @SerialName("min_discount_ratio") val minDiscountRatio: Double? = null,
     @SerialName("use_loan_capacity_as_budget") val useLoanCapacityAsBudget: Boolean = true,
 )

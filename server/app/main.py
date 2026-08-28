@@ -77,10 +77,20 @@ def require_token(authorization: str = Header(default="")) -> None:
 # ---------- 폴링 ----------
 
 
-def build_sources() -> dict[str, object]:
+def build_sources(full: bool = False) -> dict[str, object]:
+    """이번 폴링에 쓸 소스들.
+
+    `full=False` 면 온비드는 '진행중' 물건만 본다(20~30회 호출).
+    `full=True` 면 '준비중'까지 훑는다(200회쯤). 하루 한 번만 쓴다.
+    """
     available: dict[str, object] = {}
     if settings.onbid_key:
-        available["onbid"] = OnbidSource(settings.onbid_key, target_sido=settings.target_sido)
+        available["onbid"] = OnbidSource(
+            settings.onbid_key,
+            target_sido=settings.target_sido,
+            include_upcoming=full,
+            upcoming_days=settings.onbid_upcoming_days,
+        )
     if settings.rtms_key:
         # 실거래가는 시군구 코드로만 조회된다. 전국은 법정동코드 250여 개가
         # 필요하고 1회 폴링에 1,500회를 쓰므로 아직 수도권으로 둔다.
@@ -159,22 +169,35 @@ async def poller() -> None:
         "applyhome": settings.applyhome_interval_min * 60,
     }
     next_run: dict[str, float] = {}
+    next_full = 0.0
     loop = asyncio.get_running_loop()
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
         while True:
             now = loop.time()
-            for name, source in build_sources().items():
+            # 준비중까지 훑는 무거운 회차인지 판단한다.
+            full = now >= next_full
+            for name, source in build_sources(full=full).items():
                 if now < next_run.get(name, 0):
                     continue
                 result = await poll_once(name, source, client)
+
+                # 일일 한도를 넘겼으면 다음 회차를 멀리 민다. 계속 두드려 봐야
+                # 429 만 받고, 자정에 초기화될 때까지 아무 소득이 없다.
+                if not result.get("ok") and "429" in str(result.get("error", "")):
+                    next_run[name] = now + 3 * 3600
+                    continue
+
                 # 수집에 성공했을 때만 정리한다. 실패 뒤에 지우면 멀쩡한
-                # 물건이 통째로 날아간다.
-                if result.get("ok") and name == "onbid":
+                # 물건이 통째로 날아간다. 진행중만 본 회차에는 하지 않는다 -
+                # 준비중 물건이 전부 '안 잡힌 것'이 되어 지워진다.
+                if result.get("ok") and name == "onbid" and full:
                     dropped = store.drop_stale("onbid", hours=36)
                     if dropped:
                         result["dropped"] = dropped
                 next_run[name] = now + intervals.get(name, 3600)
+            if full:
+                next_full = now + settings.onbid_full_interval_min * 60
 
             await notify_pending(client)
             store.prune(settings.keep_days)
@@ -334,6 +357,7 @@ async def get_listings(
     filter_id: int | None = None,
     apply_filters: bool = True,
     include_expired: bool = False,
+    biddable_only: bool = False,
     sort: str = "recent",
     _: None = Depends(require_token),
 ) -> dict:
@@ -357,15 +381,33 @@ async def get_listings(
     # 만료 판정을 SQL 로 내린다. 파이썬으로 올려 세면 스캔 한도에 걸려
     # 총계가 잘린다(실제로 '유효 6000건'이라는 거짓 숫자가 나갔다).
     cutoff = None if include_expired else now_kst_iso()
+    now_str = now_kst_iso()
+
+    def biddable(row: dict) -> bool:
+        """지금 입찰 기간에 들어와 있는지. 상태 코드보다 시각이 정확하다."""
+        start = row.get("bid_start")
+        if start:
+            return str(start)[:16] <= now_str
+        return row.get("bid_status") == "진행중"
+
 
     if not filtering:
         # 거를 게 없으면 DB 가 세게 한다. 가져온 행 수를 총계로 쓰면
         # limit=1 일 때 "전체 1건" 같은 거짓말이 나온다.
         counts = store.count(not_expired_at=cutoff)
         total = counts.get(source, 0) if source else sum(counts.values())
-        rows = store.listings(
-            source=source, limit=page, offset=offset, not_expired_at=cutoff
-        )
+        if biddable_only:
+            rows = [
+                r for r in store.listings(
+                    source=source, limit=MATCH_SCAN_LIMIT, offset=0, not_expired_at=cutoff
+                ) if biddable(r)
+            ]
+            total = len(rows)
+            rows = rows[offset:offset + page]
+        else:
+            rows = store.listings(
+                source=source, limit=page, offset=offset, not_expired_at=cutoff
+            )
     else:
         # 조건을 걸려면 실제 객체로 만들어 봐야 한다. 페이지 단위로 거르면
         # 앞쪽 페이지가 전부 탈락했을 때 빈 목록만 돌아오므로 넉넉히 읽는다.
@@ -382,7 +424,8 @@ async def get_listings(
         )
         rows = [
             row for row in rows
-            if any(p.matches(listing_from_dict(row)) for p in profiles)
+            if (not biddable_only or biddable(row))
+            and any(p.matches(listing_from_dict(row)) for p in profiles)
         ]
         total = len(rows)
 
@@ -407,7 +450,10 @@ async def get_listings(
 
 
 @app.get("/api/notifications")
-async def get_notifications(_: None = Depends(require_token)) -> dict:
+async def get_notifications(
+    biddable_only: bool = True,
+    _: None = Depends(require_token),
+) -> dict:
     """앱이 주기적으로 가져가는 새 물건 목록. 필터에 걸린 것만."""
     from .store import listing_from_dict
 
@@ -421,6 +467,11 @@ async def get_notifications(_: None = Depends(require_token)) -> dict:
             store.mark_notified([item["dedupe_key"]])
             continue
         listing = listing_from_dict(item)
+        # 알림은 '지금 입찰할 수 있는 것'이 중요하다. 3개월 뒤 물건을 오늘
+        # 알려줘 봐야 그때 가면 잊는다. 준비중 물건은 알리지 않고 남겨 둔다
+        # (확인 처리하지 않으므로 입찰이 시작되면 그때 알림이 간다).
+        if biddable_only and not listing.is_biddable:
+            continue
         if profiles and not any(p.matches(listing) for p in profiles):
             continue
         items.append(item)
@@ -628,11 +679,11 @@ async def post_plan(body: PlanIn, _: None = Depends(require_token)) -> dict:
 
 
 @app.post("/api/refresh")
-async def refresh(_: None = Depends(require_token)) -> dict:
-    """수동 폴링. 키를 새로 넣었을 때 바로 확인하는 용도."""
+async def refresh(full: bool = False, _: None = Depends(require_token)) -> dict:
+    """수동 폴링. `full=true` 면 준비중 물건까지 훑는다(호출 200회)."""
     results = []
     async with httpx.AsyncClient(follow_redirects=True) as client:
-        for name, source in build_sources().items():
+        for name, source in build_sources(full=full).items():
             results.append(await poll_once(name, source, client))
     if not results:
         raise HTTPException(

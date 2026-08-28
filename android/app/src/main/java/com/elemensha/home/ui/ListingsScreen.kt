@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -51,6 +52,7 @@ fun ListingsScreen(
     onShowAll: () -> Unit,
     onSort: (String) -> Unit,
     onOpenDetail: (Listing) -> Unit,
+    onToggleBiddable: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
 
@@ -93,6 +95,11 @@ fun ListingsScreen(
                     selected = !state.applyFilters,
                     onClick = onShowAll,
                     label = { Text("전체") },
+                )
+                FilterChip(
+                    selected = state.biddableOnly,
+                    onClick = { onToggleBiddable(!state.biddableOnly) },
+                    label = { Text("지금 입찰 가능") },
                 )
                 FilterChip(
                     selected = state.applyFilters && state.selectedFilterId == null,
@@ -222,6 +229,21 @@ private fun ListingCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 AssistChip(onClick = {}, label = { Text(sourceLabel(listing.source)) })
+                if (listing.source == "onbid") {
+                    AssistChip(
+                        onClick = {},
+                        label = {
+                            Text(
+                                if (listing.isBiddable) "지금 입찰 가능"
+                                else listing.bidStatus.ifBlank { "준비중" }
+                            )
+                        },
+                        colors = AssistChipDefaults.assistChipColors(
+                            labelColor = if (listing.isBiddable) VerifiedGreen
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                }
                 if (listing.failedBidCount > 0) {
                     AssistChip(
                         onClick = {},
@@ -321,6 +343,13 @@ private fun ListingCard(
                     listing.caution,
                     style = MaterialTheme.typography.bodySmall,
                     color = WarningAmber,
+                )
+            }
+            if (!listing.isBiddable && !listing.bidStart.isNullOrBlank()) {
+                Text(
+                    "입찰 시작 " + listing.bidStart.replace('T', ' ') + " (한국시간)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             listing.deadline?.let { dl ->

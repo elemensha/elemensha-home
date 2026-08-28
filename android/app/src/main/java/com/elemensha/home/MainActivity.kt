@@ -125,6 +125,7 @@ private fun AppScaffold(viewModel: AppViewModel) {
                     onShowAll = viewModel::showAllListings,
                     onSort = viewModel::setSort,
                     onOpenDetail = viewModel::openDetail,
+                    onToggleBiddable = viewModel::setBiddableOnly,
                 )
                 Tab.PLAN -> PlanScreen(
                     state = state,

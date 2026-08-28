@@ -64,6 +64,8 @@ class Listing:
     asking_price_krw: int | None = None      # 호가·분양가·실거래가
 
     deadline: str | None = None    # 입찰 마감 / 청약 접수 마감 (ISO date)
+    bid_start: str | None = None   # 입찰 시작 (ISO). 지금 입찰 가능한지 판정에 쓴다
+    bid_status: str = ""           # '진행중' | '준비중' | ''
     failed_bid_count: int = 0      # 유찰 횟수
 
     # 실거래 대비 얼마나 싼지. 시세 정보가 있을 때만 채워진다.
@@ -90,6 +92,19 @@ class Listing:
         return self.deadline[:16] < now_kst_iso()
 
     @property
+    def is_biddable(self) -> bool:
+        """지금 당장 입찰할 수 있는지.
+
+        API 의 상태 코드는 회차 전환기에 늦게 따라오는 경우가 있어, 실제
+        입찰 기간에 들어와 있는지를 시각으로 직접 본다. 시작일이 없으면
+        상태 코드를 믿는다.
+        """
+        now = now_kst_iso()
+        if self.bid_start:
+            return self.bid_start[:16] <= now and not self.is_expired
+        return self.bid_status == "진행중" and not self.is_expired
+
+    @property
     def effective_price_krw(self) -> int | None:
         """필터와 수익률 계산이 쓸 '지금 사려면 드는 돈'.
 
@@ -104,6 +119,7 @@ class Listing:
         data["property_type"] = self.property_type.value
         data["effective_price_krw"] = self.effective_price_krw
         data["is_expired"] = self.is_expired
+        data["is_biddable"] = self.is_biddable
         return data
 
 
@@ -129,6 +145,9 @@ class FilterProfile:
     land_categories: list[str] = field(default_factory=list)
     # 농지(전·답·과수원) 제외. 농지취득자격증명을 못 받으면 보증금을 잃는다.
     exclude_farmland: bool = False
+    # 지금 입찰할 수 있는 물건만. 알림은 이쪽이 훨씬 유용하다 -
+    # 3개월 뒤 물건을 오늘 알려줘 봐야 그때 가면 잊는다.
+    biddable_only: bool = False
 
     # 실거래 대비 이 비율 이상 싼 것만. None이면 미적용.
     min_discount_ratio: float | None = None
@@ -153,6 +172,9 @@ class FilterProfile:
 
         area = listing.exclusive_area_sqm
         if area is not None and not (self.min_area_sqm <= area <= self.max_area_sqm):
+            return False
+
+        if self.biddable_only and not listing.is_biddable:
             return False
 
         # 지목은 raw 에 들어 있다. 토지가 아닌 물건에는 적용하지 않는다.

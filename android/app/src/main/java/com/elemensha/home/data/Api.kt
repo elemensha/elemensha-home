@@ -92,11 +92,13 @@ class Api(
         filterId: Int? = null,
         applyFilters: Boolean = true,
         sort: String = "recent",
+        biddableOnly: Boolean = false,
     ): ListingsResponse {
         val query = buildString {
             append("/api/listings?limit=").append(limit)
             append("&apply_filters=").append(applyFilters)
             append("&sort=").append(sort)
+            if (biddableOnly) append("&biddable_only=true")
             if (source != null) append("&source=").append(source)
             if (filterId != null) append("&filter_id=").append(filterId)
         }
