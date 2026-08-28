@@ -38,9 +38,12 @@ die()  { echo -e "\n\033[1;31m!!\033[0m $*" >&2; exit 1; }
 log "1/7  메모리 여유 확인"
 AVAIL=$(free -m | awk '/Mem:/{print $7}')
 echo "  가용 ${AVAIL}MB / 스왑 $(free -m | awk '/Swap:/{print $3"MB 사용 / "$2"MB"}')"
-if (( AVAIL < 150 )); then
+# 최초 설치는 pip 가 메모리를 크게 쓴다. 재배포는 코드만 바꾸므로 덜 든다.
+NEED=150
+[[ -x "${VENV}/bin/python" ]] && NEED=80
+if (( AVAIL < NEED )); then
   # 여기서 멈추지 않고 진행하면 pip 설치 도중 OOM 이 난다. 실제로 한 번 겪었다.
-  die "가용 메모리가 ${AVAIL}MB 뿐입니다. 불필요한 데몬을 먼저 정리하세요.
+  die "가용 메모리가 ${AVAIL}MB 뿐입니다 (필요 ${NEED}MB). 불필요한 데몬을 먼저 정리하세요.
   예: sudo systemctl disable --now fwupd   # 클라우드 VM 에는 갱신할 펌웨어가 없다"
 fi
 

@@ -191,6 +191,16 @@ class ListingSource(abc.ABC):
     async def fetch(self, client: httpx.AsyncClient) -> list[Listing]:
         """이번 폴링에서 볼 수 있는 물건 전부. 중복 제거는 호출자가 한다."""
 
+    async def stream(self, client: httpx.AsyncClient):
+        """페이지 단위로 흘려보낸다.
+
+        전국 수집이 1.5만 건이 되면서 리스트로 다 들고 있으면 956MB VM 에서
+        메모리 한도(280MB)를 넘겼다. 받는 대로 저장하면 한 페이지치만 든다.
+        기본 구현은 fetch() 를 그대로 쓰므로 어댑터가 필요할 때만 재정의한다.
+        """
+        for listing in await self.fetch(client):
+            yield listing
+
     async def probe(self, client: httpx.AsyncClient) -> dict:
         """응답 첫 건의 원본 필드를 그대로 돌려준다.
 

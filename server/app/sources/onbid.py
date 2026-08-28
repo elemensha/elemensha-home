@@ -3,8 +3,17 @@
 공공데이터포털 '한국자산관리공사_차세대 온비드 부동산 물건목록 조회서비스'
 (데이터셋 15157207)를 쓴다. 구 API(openapi.onbid.co.kr)는 개편으로 내려갔다.
 
-**일일 한도가 1,000회뿐이다.** 그래서 `pbctStatCd=0002`(입찰진행중)로
-좁힌다. 이것만으로 55,086건이 수백 건으로 줄어든다.
+**입찰준비중(0001)이 물건의 대부분이다.** 진행중(0002)만 가져오면
+압류재산 51,571건 중 0건만 보게 된다 - 공매는 입찰 기간이 짧아서 거의 항상
+'준비중' 상태이기 때문이다. 실제로 그렇게 만들어 두었다가 전체의 1%만
+보여주고 있었다.
+
+**정렬은 입찰 시작일 내림차순이다.** 먼 미래가 앞 페이지, 임박한 물건이 뒷
+페이지에 온다. 앞에서부터 읽으면 3개월 뒤 물건만 잔뜩 가져온다. 그래서
+이진 탐색으로 '앞으로 N일 이내' 경계 페이지를 찾아 **거기서부터 끝까지**
+읽는다(탐색 10회 + 본문 60여 회).
+
+일일 한도가 1,000회라 폴링 주기를 4시간으로 둔다.
 
 시도별로 나눠 부르지 않는다. 실측 결과 전국을 통째로 페이지네이션하는 쪽이
 **호출이 더 적다** - 시도 루프는 결과가 0건인 조합에도 1회씩 쓰기 때문이다.
@@ -18,11 +27,12 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta
 from urllib.parse import quote
 
 import httpx
 
-from ..models import Listing, PropertyType, Source
+from ..models import KST, Listing, PropertyType, Source
 from .base import ListingSource, parse_area, parse_krw, pick
 
 ENDPOINT = "https://apis.data.go.kr/B010003/OnbidRlstListSrvc2/getRlstCltrList2"
@@ -51,6 +61,7 @@ PROPERTY_DIVISIONS = {
     "0002": "공유재산",
 }
 
+BID_PENDING = "0001"       # pbctStatCd: 입찰준비중 (일정은 잡혔고 아직 시작 전)
 BID_IN_PROGRESS = "0002"   # pbctStatCd: 입찰진행중
 SALE = "매각"              # dspsMthodNm. 나머지는 임대이며 매물이 아니다.
 
@@ -85,10 +96,10 @@ class OnbidSource(ListingSource):
         service_key: str,
         target_sido: list[str] | None = None,
         divisions: list[str] | None = None,
-        max_pages: int = 30,
+        max_pages: int = 90,
         rows_per_page: int = 100,
-        timeout: float = 25.0,
-        only_in_progress: bool = True,
+        timeout: float = 30.0,
+        upcoming_days: int = 30,
         sale_only: bool = True,
     ) -> None:
         super().__init__(service_key, timeout)
@@ -97,69 +108,135 @@ class OnbidSource(ListingSource):
         self.divisions = divisions or list(PROPERTY_DIVISIONS)
         self.max_pages = max_pages
         self.rows_per_page = rows_per_page
-        self.only_in_progress = only_in_progress
+        # 앞으로 이 기간 안에 입찰이 시작되는 물건까지 가져온다.
+        # 넓힐수록 페이지가 늘어 한도를 먹는다.
+        self.upcoming_days = upcoming_days
         self.sale_only = sale_only
 
     async def fetch(self, client: httpx.AsyncClient) -> list[Listing]:
+        return [x async for x in self.stream(client)]
+
+    async def stream(self, client: httpx.AsyncClient):
         if not self.configured:
             raise RuntimeError("온비드 서비스키가 설정되지 않았다 (ONBID_SERVICE_KEY)")
 
-        listings: list[Listing] = []
+        yielded = 0
         errors: list[str] = []
 
+        horizon = (datetime.now(KST) + timedelta(days=self.upcoming_days)).strftime("%Y%m%d%H%M")
+
         for division in self.divisions:
+            name = PROPERTY_DIVISIONS.get(division, division)
+            # 진행중은 양이 적으니 통째로 읽는다.
             try:
-                listings.extend(await self._fetch_slice(client, division))
+                async for listing in self._stream_all(client, division, BID_IN_PROGRESS):
+                    yielded += 1
+                    yield listing
             except Exception as exc:
-                # 한 유형이 실패해도 나머지는 계속 모은다. 전부 실패하면 아래에서 드러난다.
-                errors.append(f"{PROPERTY_DIVISIONS.get(division, division)}: {exc}")
+                errors.append(f"{name}/진행중: {exc}")
+            # 준비중은 임박한 뒷부분만 읽는다.
+            try:
+                async for listing in self._stream_upcoming(client, division, horizon):
+                    yielded += 1
+                    yield listing
+            except Exception as exc:
+                errors.append(f"{name}/준비중: {exc}")
 
-        if not listings and errors:
+        if not yielded and errors:
             raise RuntimeError("온비드 조회가 전부 실패했다 - " + "; ".join(errors[:3]))
-        return listings
 
-    async def _fetch_slice(
-        self, client: httpx.AsyncClient, division: str
-    ) -> list[Listing]:
-        collected: list[Listing] = []
-        for page in range(1, self.max_pages + 1):
-            params = {
+    async def _page(
+        self, client: httpx.AsyncClient, division: str, status: str, page: int
+    ) -> tuple[int, list[dict]]:
+        """한 페이지. (totalCount, items)."""
+        response = await client.get(
+            ENDPOINT,
+            params={
                 "serviceKey": self.service_key,
                 "numOfRows": self.rows_per_page,
                 "pageNo": page,
                 "prptDivCd": division,
                 "pvctTrgtYn": "N",
-            }
-            if self.only_in_progress:
-                params["pbctStatCd"] = BID_IN_PROGRESS
+                "pbctStatCd": status,
+            },
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        root = ET.fromstring(response.text)
 
-            response = await client.get(ENDPOINT, params=params, timeout=self.timeout)
-            response.raise_for_status()
-            root = ET.fromstring(response.text)
+        code = (root.findtext(".//resultCode") or "").strip()
+        if code and code.lstrip("0") != "":
+            message = (root.findtext(".//resultMsg") or "").strip()
+            if message == "NODATA_ERROR":
+                return 0, []
+            raise RuntimeError(f"[{code}] {message}")
 
-            code = (root.findtext(".//resultCode") or "").strip()
-            if code and code.lstrip("0") != "":
-                message = (root.findtext(".//resultMsg") or "").strip()
-                if message == "NODATA_ERROR":
-                    break
-                raise RuntimeError(f"[{code}] {message}")
+        total = int(root.findtext(".//totalCount") or 0)
+        items = [
+            {child.tag: (child.text or "").strip() for child in node}
+            for node in root.iter("item")
+        ]
+        return total, items
 
-            items = [
-                {child.tag: (child.text or "").strip() for child in node}
-                for node in root.iter("item")
-            ]
+    async def _stream_all(
+        self, client: httpx.AsyncClient, division: str, status: str
+    ):
+        for page in range(1, self.max_pages + 1):
+            _, items = await self._page(client, division, status, page)
             if not items:
                 break
-
             for item in items:
                 listing = self._to_listing(item)
                 if listing is not None:
-                    collected.append(listing)
-
+                    yield listing
             if len(items) < self.rows_per_page:
                 break
 
-        return collected
+    async def _stream_upcoming(
+        self, client: httpx.AsyncClient, division: str, horizon: str
+    ):
+        """입찰 시작이 `horizon` 이전인 준비중 물건.
+
+        시작일 내림차순이라 임박한 것이 뒤에 있다. 이진 탐색으로 경계
+        페이지를 찾고 거기서 끝까지 읽는다. 전부 읽으면 500페이지가 넘어
+        하루치 한도를 한 번에 태운다.
+        """
+        total, first = await self._page(client, division, BID_PENDING, 1)
+        if total <= 0:
+            return
+        last_page = (total + self.rows_per_page - 1) // self.rows_per_page
+
+        def earliest(items: list[dict]) -> str:
+            dates = [i.get("cltrBidBgngDt", "") for i in items if i.get("cltrBidBgngDt")]
+            return min(dates) if dates else ""
+
+        lo, hi = 1, last_page
+        if earliest(first) > horizon:
+            while lo < hi:
+                mid = (lo + hi) // 2
+                _, items = await self._page(client, division, BID_PENDING, mid)
+                if items and earliest(items) <= horizon:
+                    hi = mid
+                else:
+                    lo = mid + 1
+
+        pages = 0
+        for page in range(lo, last_page + 1):
+            if pages >= self.max_pages:
+                # 한도를 지키기 위해 여기서 멈춘다. 더 있다는 사실은
+                # 잘렸다는 것을 알 수 있도록 로그에 남는다.
+                break
+            _, items = await self._page(client, division, BID_PENDING, page)
+            pages += 1
+            if not items:
+                break
+            for item in items:
+                # 경계 페이지에는 기간 밖 물건이 섞여 있다.
+                if (item.get("cltrBidBgngDt") or "") > horizon:
+                    continue
+                listing = self._to_listing(item)
+                if listing is not None:
+                    yield listing
 
     def _to_listing(self, item: dict) -> Listing | None:
         cltr_mng_no = pick(item, "cltrMngNo")

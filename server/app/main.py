@@ -40,7 +40,7 @@ APP_VERSION_CODE = 1
 
 # 조건 매칭 시 훑어볼 최근 물건 수. 전부 객체로 만들어 비교해야 해서
 # 무제한으로 두면 작은 VM 의 메모리를 밀어낸다.
-MATCH_SCAN_LIMIT = 2000
+MATCH_SCAN_LIMIT = 6000
 
 
 def _expired(row: dict) -> bool:
@@ -89,15 +89,20 @@ def build_sources() -> dict[str, object]:
 
 async def poll_once(name: str, source, client: httpx.AsyncClient) -> dict:
     """한 소스를 한 번 긁어 저장한다. 실패는 삼키지 않고 기록한다."""
+    fetched = new_count = 0
     try:
-        listings = await source.fetch(client)
+        # 받는 대로 저장한다. 전국 1.5만 건을 리스트로 들고 있으면
+        # 956MB VM 에서 메모리 한도를 넘긴다.
+        async for listing in source.stream(client):
+            fetched += 1
+            if store.upsert(listing):
+                new_count += 1
     except Exception as exc:  # 어댑터 하나가 죽어도 서버는 살아 있어야 한다
-        store.log_poll(name, ok=False, error=f"{type(exc).__name__}: {exc}")
-        return {"source": name, "ok": False, "error": str(exc)}
+        store.log_poll(name, ok=False, fetched=fetched, error=f"{type(exc).__name__}: {exc}")
+        return {"source": name, "ok": False, "fetched": fetched, "error": str(exc)}
 
-    new_count = sum(1 for listing in listings if store.upsert(listing))
-    store.log_poll(name, ok=True, fetched=len(listings), new_count=new_count)
-    return {"source": name, "ok": True, "fetched": len(listings), "new": new_count}
+    store.log_poll(name, ok=True, fetched=fetched, new_count=new_count)
+    return {"source": name, "ok": True, "fetched": fetched, "new": new_count}
 
 
 async def notify_pending(client: httpx.AsyncClient) -> int:
@@ -345,27 +350,35 @@ async def get_listings(
 
     page = min(limit, 500)
 
-    if not filtering and include_expired:
+    # 만료 판정을 SQL 로 내린다. 파이썬으로 올려 세면 스캔 한도에 걸려
+    # 총계가 잘린다(실제로 '유효 6000건'이라는 거짓 숫자가 나갔다).
+    cutoff = None if include_expired else now_kst_iso()
+
+    if not filtering:
         # 거를 게 없으면 DB 가 세게 한다. 가져온 행 수를 총계로 쓰면
         # limit=1 일 때 "전체 1건" 같은 거짓말이 나온다.
-        counts = store.count()
+        counts = store.count(not_expired_at=cutoff)
         total = counts.get(source, 0) if source else sum(counts.values())
-        rows = store.listings(source=source, limit=page, offset=offset)
-    elif not filtering:
-        # 만료를 걸러야 하면 실제로 훑어봐야 한다.
-        rows = [
-            r for r in store.listings(source=source, limit=MATCH_SCAN_LIMIT, offset=0)
-            if not _expired(r)
-        ]
-        total = len(rows)
+        rows = store.listings(
+            source=source, limit=page, offset=offset, not_expired_at=cutoff
+        )
     else:
         # 조건을 걸려면 실제 객체로 만들어 봐야 한다. 페이지 단위로 거르면
         # 앞쪽 페이지가 전부 탈락했을 때 빈 목록만 돌아오므로 넉넉히 읽는다.
-        rows = store.listings(source=source, limit=MATCH_SCAN_LIMIT, offset=0)
+        # 조건들의 가격 범위 합집합을 SQL 로 먼저 넘긴다. 전부 올려서
+        # 파이썬으로 거르면 1.5만 건에서 요청마다 몇 초가 걸린다.
+        rows = store.listings(
+            source=source,
+            limit=MATCH_SCAN_LIMIT,
+            offset=0,
+            sources=sorted({s for p in profiles for s in p.sources}) or None,
+            min_price=min((p.min_price_krw for p in profiles), default=None),
+            max_price=max((p.max_price_krw for p in profiles), default=None),
+            not_expired_at=cutoff,
+        )
         rows = [
             row for row in rows
-            if (include_expired or not _expired(row))
-            and any(p.matches(listing_from_dict(row)) for p in profiles)
+            if any(p.matches(listing_from_dict(row)) for p in profiles)
         ]
         total = len(rows)
 
@@ -376,7 +389,7 @@ async def get_listings(
     elif sort == "deadline":
         rows.sort(key=lambda r: r.get("deadline") or "9999")
 
-    items = rows[offset:offset + page] if (filtering or not include_expired) else rows
+    items = rows[offset:offset + page] if filtering else rows
 
     return {
         "items": items,

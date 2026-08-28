@@ -56,7 +56,9 @@ class Settings:
     # 하루 240회라 여유가 있지만, 지역을 넓히면 금방 닿는다.
     # 실거래가는 시군구x월 조합이라 1회 폴링에 460여 건이 나가지만 한도가
     # 10,000회라 12시간 주기면 충분하다.
-    onbid_interval_min: int = field(default_factory=lambda: _env_int("ONBID_INTERVAL_MIN", 90))
+    # 준비중 물건까지 가져오면 1회 폴링에 200회쯤 쓴다. 일일 한도가
+    # 1,000회라 6시간(하루 4회)이 안전선이다.
+    onbid_interval_min: int = field(default_factory=lambda: _env_int("ONBID_INTERVAL_MIN", 360))
     rtms_interval_min: int = field(default_factory=lambda: _env_int("RTMS_INTERVAL_MIN", 720))
     applyhome_interval_min: int = field(
         default_factory=lambda: _env_int("APPLYHOME_INTERVAL_MIN", 360)

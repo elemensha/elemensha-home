@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS listings (
 CREATE INDEX IF NOT EXISTS idx_listings_source ON listings(source);
 CREATE INDEX IF NOT EXISTS idx_listings_seen ON listings(first_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_listings_notified ON listings(notified_at);
+CREATE INDEX IF NOT EXISTS idx_listings_price ON listings(effective_price);
 
 CREATE TABLE IF NOT EXISTS filters (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -140,12 +141,43 @@ class Store:
         source: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        sources: list[str] | None = None,
+        min_price: int | None = None,
+        max_price: int | None = None,
+        not_expired_at: str | None = None,
     ) -> list[dict]:
-        query = "SELECT payload, first_seen_at, notified_at FROM listings"
+        """물건 목록.
+
+        가격·소스는 SQL 에서 먼저 거른다. 수집 범위를 넓히면서 1.5만 건이
+        됐는데, 전부 파이썬으로 올려 json 을 풀어 비교하면 작은 VM 에서
+        요청마다 몇 초가 걸린다. 인덱스가 있는 컬럼으로 먼저 줄인다.
+        """
+        clauses: list[str] = []
         params: list = []
         if source:
-            query += " WHERE source = ?"
+            clauses.append("source = ?")
             params.append(source)
+        elif sources:
+            clauses.append(f"source IN ({','.join('?' * len(sources))})")
+            params += sources
+        if min_price is not None:
+            clauses.append("(effective_price IS NULL OR effective_price >= ?)")
+            params.append(min_price)
+        if max_price is not None:
+            clauses.append("(effective_price IS NULL OR effective_price <= ?)")
+            params.append(max_price)
+        if not_expired_at is not None:
+            # 마감 판정도 SQL 에서 한다. 파이썬으로 올려 세면 스캔 한도에
+            # 걸려 '유효 6000건' 같은 잘린 숫자가 총계로 나간다.
+            clauses.append(
+                "(json_extract(payload,'$.deadline') IS NULL"
+                " OR substr(json_extract(payload,'$.deadline'),1,16) >= ?)"
+            )
+            params.append(not_expired_at)
+
+        query = "SELECT payload, first_seen_at, notified_at FROM listings"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY first_seen_at DESC LIMIT ? OFFSET ?"
         params += [limit, offset]
 
@@ -160,11 +192,16 @@ class Store:
             for r in rows
         ]
 
-    def count(self) -> dict[str, int]:
+    def count(self, not_expired_at: str | None = None) -> dict[str, int]:
+        query = "SELECT source, COUNT(*) AS n FROM listings"
+        params: list = []
+        if not_expired_at is not None:
+            query += (" WHERE json_extract(payload,'$.deadline') IS NULL"
+                      " OR substr(json_extract(payload,'$.deadline'),1,16) >= ?")
+            params.append(not_expired_at)
+        query += " GROUP BY source"
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT source, COUNT(*) AS n FROM listings GROUP BY source"
-            ).fetchall()
+            rows = conn.execute(query, params).fetchall()
         return {r["source"]: r["n"] for r in rows}
 
     def prune(self, keep_days: int = 90) -> int:
