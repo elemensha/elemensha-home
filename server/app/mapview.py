@@ -76,6 +76,11 @@ def render(
         f'<span class="warn">좌표 없음 {no_coord_count}건 제외</span>'
         if no_coord_count else ""
     )
+    # 지도에 다 못 실은 경우를 숨기면 화면의 숫자가 총계인 줄 안다.
+    capped = (
+        f'<span class="warn">전체 {total:,}건 중 {len(markers):,}건만 표시</span>'
+        if total > len(markers) + no_coord_count else ""
+    )
 
     return f"""<!doctype html>
 <html lang="ko"><head>
@@ -124,6 +129,7 @@ def render(
     <span id="count"></span>
     <span style="color:#888">· 조건: {applied}</span>
     {missing}
+    {capped}
   </div>
   <div class="row" style="margin-top:6px">
     <label>면적 <input type="number" id="amin" placeholder="최소" min="0"> ~
@@ -172,8 +178,9 @@ function body(d, extra) {{
   const rate = (d.p && d.m) ? ' · 감정가의 ' + Math.round(d.m / d.p * 100) + '%' : '';
   const st = d.b ? '<span class="live-t">지금 입찰 가능</span>'
                  : '<span class="soon-t">입찰 준비중</span>';
-  return '<div class="iw"><b>' + esc(d.t) + '</b>'
-    + '<div class="addr">' + esc(d.a) + '</div>'
+  // 온비드는 제목이 곧 소재지인 물건이 많다. 그대로 두면 같은 줄이 두 번 뜬다.
+  const addr = (d.a && d.a !== d.t) ? '<div class="addr">' + esc(d.a) + '</div>' : '';
+  return '<div class="iw"><b>' + esc(d.t) + '</b>' + addr
     + st + '<br>최저 ' + won(d.m) + rate
     + '<br>면적 ' + py
     + (d.f ? '<br>유찰 ' + d.f + '회' : '')
@@ -192,11 +199,29 @@ function body(d, extra) {{
 // 지도에서 물건을 눌렀을 때 목록 화면으로 되돌아가지 않게, 감정평가서와
 // 위험 요소를 여기서 바로 편다. 상세는 캐시되므로 두 번째부터는 즉시 뜬다.
 let openMarker = null;
+
+/**
+ * 말풍선을 여는 유일한 창구.
+ *
+ * 버튼 리스너를 여기서 건다. InfoWindow 안의 클릭은 document 까지
+ * 전파되지 않아 위임이 안 통하고, 인라인 onclick 은 따옴표가 한 번
+ * 깨지면 조용히 동작만 안 하는 버튼이 된다. 둘 다 겪었다.
+ */
+function openInfo(d, extra) {{
+  iw.setContent(body(d, extra));
+  if (openMarker) iw.open(map, openMarker);
+  const btn = document.querySelector('button.more');
+  if (btn) {{
+    btn.addEventListener('click', ev => {{
+      ev.stopPropagation();
+      loadDetail(btn.getAttribute('data-k'));
+    }});
+  }}
+}}
 async function loadDetail(key) {{
   const d = DATA.find(x => x.k === key);
   if (!d) return;
-  document.getElementById('dt').innerHTML =
-    '<div class="muted">상세를 가져오는 중...</div>';
+  openInfo(d, '<div class="muted">상세를 가져오는 중...</div>');
   try {{
     const r = await fetch('api/listings/' + encodeURIComponent(key) + '/detail',
                           {{ headers: TOKEN ? {{ Authorization: 'Bearer ' + TOKEN }} : {{}} }});
@@ -229,13 +254,12 @@ async function loadDetail(key) {{
       h += '<div class="sub">유의사항: ' + esc(detail.notes).slice(0, 300) + '</div>';
     }}
     if (!h) h = '<div class="muted">상세에 추가 정보가 없습니다.</div>';
-    iw.setContent(body(d, h));
+    openInfo(d, h);
   }} catch (e) {{
     // 실패를 삼키면 '눌러도 아무 일 없는 버튼'이 된다.
-    iw.setContent(body(d, '<div class="risk">상세를 못 가져왔습니다 ('
-      + esc(e.message) + ')</div>'));
+    openInfo(d, '<div class="risk">상세를 못 가져왔습니다 ('
+      + esc(e.message) + ')</div>');
   }}
-  if (openMarker) iw.open(map, openMarker);
 }}
 
 // 네이버 v3 에는 클러스터러가 없다. 외부 라이브러리를 끌어오는 대신
@@ -265,7 +289,7 @@ function pin(d) {{
     // 열자마자 상세를 붙이지는 않는다 - 온비드 상세는 일일 1,000회뿐이라
     // 마커를 훑기만 해도 한도가 날아간다. 누를 때만 가져온다.
     openMarker = m;
-    iw.setContent(body(d)); iw.open(map, m);
+    openInfo(d);
   }});
   return m;
 }}
@@ -336,14 +360,6 @@ function draw() {{
     shown.push(cluster(items, la, lo2));
   }});
 }}
-
-// 말풍선 안의 버튼은 innerHTML 로 새로 그려지므로 리스너를 직접 못 건다.
-// 위임해서 받는다 - 인라인 onclick 은 따옴표 이스케이프가 한 번 깨지면
-// 조용히 동작만 안 하는 버튼이 된다.
-document.addEventListener('click', e => {{
-  const btn = e.target.closest && e.target.closest('button.more');
-  if (btn) loadDetail(btn.getAttribute('data-k'));
-}});
 
 naver.maps.Event.addListener(map, 'idle', draw);
 ['amin', 'amax'].forEach(id =>

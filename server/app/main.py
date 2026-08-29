@@ -474,6 +474,7 @@ def select_listings(
     include_expired: bool = False,
     biddable_only: bool = False,
     sort: str = "recent",
+    page_cap: int = 500,
 ) -> dict:
     """저장된 조건에 맞는 물건을 고른다.
 
@@ -494,7 +495,10 @@ def select_listings(
         profiles = [p for p in profiles if p.id == filter_id]
     filtering = apply_filters and bool(profiles)
 
-    page = min(limit, 500)
+    # 목록은 한 번에 500건까지. 지도는 한 화면에 다 찍어야 하므로
+    # 더 크게 잡는다 - 500 으로 자르면 1,754건 중 500건만 찍히고,
+    # 화면에는 그게 전부인 것처럼 '500건'이라고 나온다.
+    page = min(limit, page_cap)
 
     # 만료 판정을 SQL 로 내린다. 파이썬으로 올려 세면 스캔 한도에 걸려
     # 총계가 잘린다(실제로 '유효 6000건'이라는 거짓 숫자가 나갔다).
@@ -695,6 +699,7 @@ async def get_map(
         source=source, limit=MAP_MARKER_LIMIT, offset=0, filter_id=filter_id,
         apply_filters=apply_filters, include_expired=include_expired,
         biddable_only=biddable_only, sort="recent",
+        page_cap=MAP_MARKER_LIMIT,
     )
     items = result["items"]
     markers = mapview.to_markers(items)
