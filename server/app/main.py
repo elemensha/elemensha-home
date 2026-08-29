@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -26,7 +26,7 @@ from .finance.roi import ExitScenario, estimate_holding_cost, evaluate_scenario
 from .finance.provenance import Status, load_provenance
 from .finance.rules import load_ruleset
 from .finance.tax import calculate_acquisition_cost
-from .models import FilterProfile, Source, now_kst_iso
+from .models import KST, FilterProfile, Source, now_kst_iso
 from .sources.onbid import OnbidSource
 from .sources.onbid_detail import fetch_detail
 from .sources.rtms import RtmsSource
@@ -161,6 +161,19 @@ async def notify_pending(client: httpx.AsyncClient) -> int:
     return sent
 
 
+def _seconds_until_hour(hour: int) -> float:
+    """다음 `hour` 시(KST)까지 남은 초.
+
+    상대 주기만 쓰면 서비스를 재시작한 시각에 수집 시각이 끌려다닌다.
+    앱 알림이 아침 7시라 그보다 앞서 끝나야 하므로 벽시계에 고정한다.
+    """
+    now = datetime.now(KST)
+    target = now.replace(hour=hour % 24, minute=0, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
+
+
 async def poller() -> None:
     """소스별로 다른 주기를 각자 지키며 도는 루프."""
     intervals = {
@@ -168,9 +181,12 @@ async def poller() -> None:
         "rtms": settings.rtms_interval_min * 60,
         "applyhome": settings.applyhome_interval_min * 60,
     }
-    next_run: dict[str, float] = {}
-    next_full = 0.0
     loop = asyncio.get_running_loop()
+    # 온비드는 지정 시각에 처음 돌고, 그다음부터 24시간 주기.
+    # 나머지 소스는 서비스가 뜨자마자 한 번 돈다.
+    onbid_first = loop.time() + _seconds_until_hour(settings.onbid_poll_hour)
+    next_run: dict[str, float] = {"onbid": onbid_first}
+    next_full = onbid_first
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
         while True:
