@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from .config import settings
@@ -27,6 +28,8 @@ from .finance.roi import ExitScenario, estimate_holding_cost, evaluate_scenario
 from .finance.provenance import Status, load_provenance
 from .finance.rules import load_ruleset
 from .finance.tax import calculate_acquisition_cost
+from . import mapview
+from .geocode import Geocoder
 from .models import KST, FilterProfile, Source, now_kst_iso
 from .sources.onbid import OnbidSource
 from .sources.onbid_detail import fetch_detail
@@ -50,6 +53,9 @@ logging.basicConfig(
 LOGGER = logging.getLogger("elemensha.home")
 
 MATCH_SCAN_LIMIT = 6000
+# 지도에 한 번에 찍을 최대 마커. 페이지에 데이터를 박아 보내므로
+# 무제한이면 폰에서 몇 MB 짜리 HTML 을 받게 된다.
+MAP_MARKER_LIMIT = 3000
 
 # 한 번에 넘길 알림 최대 건수. 앱이 하루 한 번 가져가므로 하루치가
 # 한꺼번에 온다. 개별 알림이 아니라 요약으로 묶이니 많아도 괜찮다.
@@ -138,6 +144,34 @@ async def poll_once(name: str, source, client: httpx.AsyncClient) -> dict:
                 name, fetched, new_count, calls)
     return {"source": name, "ok": True, "fetched": fetched,
             "new": new_count, "api_calls": calls}
+
+
+async def backfill_coords(client: httpx.AsyncClient, limit: int) -> dict:
+    """좌표 없는 물건에 좌표를 붙인다.
+
+    수집과 분리한 이유는 두 가지다. 온비드가 429 로 죽어도 지오코딩은
+    계속 진행돼야 하고, 카카오가 죽어도 수집은 살아 있어야 한다.
+    """
+    if not settings.kakao_rest_key:
+        return {"skipped": "KAKAO_REST_KEY 없음"}
+
+    pending = store.listings_missing_coords(limit)
+    if not pending:
+        return {"done": 0, "remaining": 0}
+
+    geo = Geocoder(settings.kakao_rest_key, store=store)
+    done = failed = 0
+    for row in pending:
+        found = await geo.locate(client, row.get("address", ""))
+        if found is None:
+            failed += 1
+            continue
+        store.set_coords(row["dedupe_key"], found[0], found[1])
+        done += 1
+
+    LOGGER.info("지오코딩: %d건 성공, %d건 실패 / API %d회 (캐시 덕에 호출 절감)",
+                done, failed, geo.api_calls)
+    return {"done": done, "failed": failed, "api_calls": geo.api_calls}
 
 
 async def notify_pending(client: httpx.AsyncClient) -> int:
@@ -236,6 +270,13 @@ async def poller() -> None:
             if full:
                 next_full = now + settings.onbid_full_interval_min * 60
 
+            # 좌표 붙이기는 수집 성패와 무관하게 돌린다. 온비드가 막힌
+            # 날에도 이미 받아둔 물건의 좌표는 채워져야 지도가 완성된다.
+            try:
+                await backfill_coords(client, settings.geocode_batch)
+            except Exception as exc:
+                LOGGER.warning("지오코딩 백필 실패: %s", exc)
+
             await notify_pending(client)
             store.prune(settings.keep_days)
             await asyncio.sleep(60)
@@ -243,6 +284,10 @@ async def poller() -> None:
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 옛 기본값(1000㎡) 때문에 302평 넘는 토지가 안 보이던 것을 푼다.
+    freed = store.migrate_area_cap()
+    if freed:
+        LOGGER.info("면적 상한을 푼 조건 %d개", freed)
     task = asyncio.create_task(poller())
     try:
         yield
@@ -378,6 +423,13 @@ async def health() -> dict:
         "ruleset_version": rules.version,
         "source_coverage": provenance.coverage(),
         "auth_enabled": bool(settings.api_token),
+        # 지도가 비어 보일 때 원인이 '물건이 없어서'인지 '좌표를 아직
+        # 못 붙여서'인지 구분되어야 한다.
+        "geocode": {
+            **store.geocode_coverage(),
+            "key_set": bool(settings.kakao_rest_key),
+            "map_key_set": bool(settings.kakao_js_key),
+        },
     }
 
 
@@ -386,8 +438,7 @@ async def get_rules(_: None = Depends(require_token)) -> dict:
     return {"rules": rules.to_dict(), "provenance": provenance.to_dict()}
 
 
-@app.get("/api/listings")
-async def get_listings(
+def select_listings(
     source: str | None = None,
     limit: int = 100,
     offset: int = 0,
@@ -396,9 +447,12 @@ async def get_listings(
     include_expired: bool = False,
     biddable_only: bool = False,
     sort: str = "recent",
-    _: None = Depends(require_token),
 ) -> dict:
-    """저장된 조건에 맞는 물건만 돌려준다.
+    """저장된 조건에 맞는 물건을 고른다.
+
+    `/api/listings` 와 `/map` 이 같은 결과를 보여야 하므로 고르는 규칙을
+    한 군데 둔다. 목록과 지도가 다른 물건을 보여주면 둘 중 뭘 믿어야 할지
+    알 수 없다.
 
     `apply_filters=false` 면 조건을 무시하고 전부 준다. 조건이 하나도 없으면
     거를 것이 없으므로 역시 전부 준다 - 조건을 안 만든 사용자에게 빈 화면을
@@ -474,6 +528,10 @@ async def get_listings(
         rows.sort(key=lambda r: r.get("deadline") or "9999")
 
     items = rows[offset:offset + page] if filtering else rows
+    # 지도 말풍선이 상태를 표시해야 한다. 다시 계산하면 목록과 지도가
+    # 어긋날 수 있으므로 여기서 판정한 값을 그대로 실어 보낸다.
+    for row in items:
+        row["_biddable"] = biddable(row)
 
     return {
         "items": items,
@@ -484,6 +542,62 @@ async def get_listings(
         "scan_truncated": total >= MATCH_SCAN_LIMIT,
         "expired_hidden": not include_expired,
     }
+
+
+@app.get("/map", response_class=HTMLResponse)
+async def get_map(
+    source: str | None = None,
+    filter_id: int | None = None,
+    apply_filters: bool = True,
+    include_expired: bool = False,
+    biddable_only: bool = False,
+    token: str = "",
+    authorization: str = Header(default=""),
+) -> HTMLResponse:
+    """물건을 지도에 찍는다.
+
+    WebView 는 Authorization 헤더를 실어 보내고, PC 브라우저는 ?token= 로
+    연다. 둘 다 받는 이유는 폰과 PC 에서 같은 화면을 보기 위해서다.
+    """
+    if settings.api_token:
+        supplied = token or authorization.removeprefix("Bearer ").strip()
+        if supplied != settings.api_token:
+            raise HTTPException(status_code=401, detail="인증 실패")
+
+    result = select_listings(
+        source=source, limit=MAP_MARKER_LIMIT, offset=0, filter_id=filter_id,
+        apply_filters=apply_filters, include_expired=include_expired,
+        biddable_only=biddable_only, sort="recent",
+    )
+    items = result["items"]
+    markers = mapview.to_markers(items)
+    return HTMLResponse(mapview.render(
+        markers=markers,
+        total=result["total_matched"],
+        js_key=settings.kakao_js_key,
+        filters_applied=result["filters_applied"],
+        # 좌표가 없어 빠진 건수를 숨기면 "왜 목록보다 적지?"로 끝난다.
+        no_coord_count=len(items) - len(markers),
+    ))
+
+
+@app.get("/api/listings")
+async def get_listings(
+    source: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    filter_id: int | None = None,
+    apply_filters: bool = True,
+    include_expired: bool = False,
+    biddable_only: bool = False,
+    sort: str = "recent",
+    _: None = Depends(require_token),
+) -> dict:
+    return select_listings(
+        source=source, limit=limit, offset=offset, filter_id=filter_id,
+        apply_filters=apply_filters, include_expired=include_expired,
+        biddable_only=biddable_only, sort=sort,
+    )
 
 
 @app.get("/api/notifications")

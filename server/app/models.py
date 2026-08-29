@@ -54,6 +54,10 @@ class Listing:
     sido: str = ""                 # 시도 (서울특별시, 경기도)
     sigungu: str = ""              # 시군구
     address: str = ""
+    # 지도용 좌표. 주소를 지오코딩해 채운다. 못 찾으면 None 으로 남고
+    # 지도에서 빠진다 - 엉뚱한 곳에 찍는 것보다 안 보이는 편이 낫다.
+    lat: float | None = None
+    lon: float | None = None
 
     property_type: PropertyType = PropertyType.OTHER
     exclusive_area_sqm: float | None = None
@@ -138,7 +142,10 @@ class FilterProfile:
     min_price_krw: int = 0
     max_price_krw: int = 2_000_000_000
     min_area_sqm: float = 0.0
-    max_area_sqm: float = 1000.0
+    # None = 상한 없음. 예전 기본값이 1000.0 이었는데 앱에 면적 입력이
+    # 없어서 아무도 고른 적 없는 값이었고, 302평 넘는 토지가 조용히
+    # 빠지고 있었다. 토지는 그보다 큰 것이 흔하다.
+    max_area_sqm: float | None = None
     property_types: list[str] = field(default_factory=lambda: [PropertyType.APARTMENT.value])
 
     # 토지 지목(대지·임야·전·답 ...). 비우면 전부.
@@ -171,8 +178,11 @@ class FilterProfile:
             return False
 
         area = listing.exclusive_area_sqm
-        if area is not None and not (self.min_area_sqm <= area <= self.max_area_sqm):
-            return False
+        if area is not None:
+            if area < self.min_area_sqm:
+                return False
+            if self.max_area_sqm is not None and area > self.max_area_sqm:
+                return False
 
         if self.biddable_only and not listing.is_biddable:
             return False

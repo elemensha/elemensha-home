@@ -82,7 +82,9 @@ data class FilterProfile(
     @SerialName("min_price_krw") val minPriceKrw: Long = 0,
     @SerialName("max_price_krw") val maxPriceKrw: Long = 2_000_000_000,
     @SerialName("min_area_sqm") val minAreaSqm: Double = 0.0,
-    @SerialName("max_area_sqm") val maxAreaSqm: Double = 1000.0,
+    // null = 상한 없음. 예전 기본값 1000.0 은 302평이라 토지가 대부분
+    // 걸러졌다. 면적 입력이 없던 시절이라 아무도 고른 적 없는 값이었다.
+    @SerialName("max_area_sqm") val maxAreaSqm: Double? = null,
     @SerialName("property_types") val propertyTypes: List<String> = listOf("아파트"),
     /** 토지 지목. 비우면 전부. */
     @SerialName("land_categories") val landCategories: List<String> = emptyList(),

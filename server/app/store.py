@@ -48,6 +48,16 @@ CREATE TABLE IF NOT EXISTS listing_details (
     fetched_at  TEXT NOT NULL
 );
 
+-- 주소 -> 좌표 캐시. 같은 건물의 여러 호실이 한 지번을 공유하므로
+-- 정제한 주소를 키로 둔다. lat 이 NULL 이면 '찾아봤지만 없었다'는 뜻이고,
+-- 그것도 캐시해야 못 찾는 주소를 매번 다시 묻지 않는다.
+CREATE TABLE IF NOT EXISTS geocode (
+    address_key TEXT PRIMARY KEY,
+    lat         REAL,
+    lon         REAL,
+    tried_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS poll_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     source     TEXT NOT NULL,
@@ -203,6 +213,78 @@ class Store:
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
         return {r["source"]: r["n"] for r in rows}
+
+    # ---- 지오코딩 캐시 ----
+
+    def get_geocode(self, address_key: str) -> tuple[float | None, float | None] | None:
+        """(lat, lon) / (None, None) = 실패 기록 / None = 아직 안 해봄."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT lat, lon FROM geocode WHERE address_key = ?", (address_key,)
+            ).fetchone()
+        if row is None:
+            return None
+        return (row["lat"], row["lon"])
+
+    def save_geocode(self, address_key: str, found: tuple[float, float] | None) -> None:
+        lat, lon = found if found else (None, None)
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO geocode(address_key, lat, lon, tried_at) VALUES(?,?,?,?)"
+                " ON CONFLICT(address_key) DO UPDATE SET"
+                " lat=excluded.lat, lon=excluded.lon, tried_at=excluded.tried_at",
+                (address_key, lat, lon, _now()),
+            )
+
+    def geocode_coverage(self) -> dict[str, int]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n,"
+                " SUM(CASE WHEN lat IS NOT NULL THEN 1 ELSE 0 END) AS hit"
+                " FROM geocode"
+            ).fetchone()
+        return {"tried": row["n"] or 0, "found": row["hit"] or 0}
+
+    def listings_missing_coords(self, limit: int) -> list[dict]:
+        """좌표가 아직 안 붙은 물건. 지오코딩 백필 대상이다."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT dedupe_key, payload FROM listings"
+                " WHERE json_extract(payload,'$.lat') IS NULL"
+                "   AND COALESCE(json_extract(payload,'$.address'),'') != ''"
+                " ORDER BY first_seen_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [{"dedupe_key": r["dedupe_key"], **json.loads(r["payload"])} for r in rows]
+
+    def set_coords(self, dedupe_key: str, lat: float, lon: float) -> None:
+        """이미 저장된 물건에 좌표만 덧입힌다."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE listings SET payload = json_set(payload, '$.lat', ?, '$.lon', ?)"
+                " WHERE dedupe_key = ?",
+                (lat, lon, dedupe_key),
+            )
+
+    def migrate_area_cap(self) -> int:
+        """옛 기본값 1000.0 이 박힌 조건의 면적 상한을 푼다.
+
+        앱에 면적 입력이 없던 시절의 기본값이라 사용자가 고른 적이 없다.
+        그대로 두면 302평 넘는 토지가 계속 안 보인다.
+        """
+        changed = 0
+        with self._connect() as conn:
+            rows = conn.execute("SELECT id, payload FROM filters").fetchall()
+            for row in rows:
+                data = json.loads(row["payload"])
+                if data.get("max_area_sqm") == 1000.0:
+                    data["max_area_sqm"] = None
+                    conn.execute(
+                        "UPDATE filters SET payload = ? WHERE id = ?",
+                        (json.dumps(data, ensure_ascii=False), row["id"]),
+                    )
+                    changed += 1
+        return changed
 
     def prune(self, keep_days: int = 90) -> int:
         """오래된 물건을 지운다. 작은 서버라 무한정 쌓아두지 않는다."""

@@ -45,6 +45,12 @@ private val TYPES = listOf(
     "아파트", "오피스텔", "연립다세대", "단독주택", "토지", "상가", "기타",
 )
 
+private const val SQM_PER_PYEONG = 3.305785
+
+/** 평 입력을 ㎡ 로. 비었으면 null 이라 호출부가 기본값을 정한다. */
+private fun pyeongToSqm(text: String): Double? =
+    text.trim().toDoubleOrNull()?.takeIf { it > 0 }?.times(SQM_PER_PYEONG)
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FiltersScreen(
@@ -56,6 +62,9 @@ fun FiltersScreen(
     var draft by remember { mutableStateOf(FilterProfile(sido = emptyList())) }
     var minText by remember { mutableStateOf("") }
     var maxText by remember { mutableStateOf("50000") }
+    // 면적은 평으로 받는다. ㎡ 로 물어보면 머릿속에서 한 번 더 나눠야 한다.
+    var minPyeong by remember { mutableStateOf("") }
+    var maxPyeong by remember { mutableStateOf("") }
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -204,6 +213,31 @@ fun FiltersScreen(
                 }
 
                 Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = minPyeong,
+                        onValueChange = { minPyeong = it.filter(Char::isDigit) },
+                        label = { Text("최소 면적 (평)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = maxPyeong,
+                        onValueChange = { maxPyeong = it.filter(Char::isDigit) },
+                        label = { Text("최대 면적 (평)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Text(
+                    "비워 두면 면적을 따지지 않는다. 1평 = 3.3㎡ 로 환산해 저장한다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Spacer(Modifier.height(12.dp))
                 Button(
                     onClick = {
                         onSave(
@@ -211,9 +245,14 @@ fun FiltersScreen(
                                 minPriceKrw = parseManwonInput(minText),
                                 maxPriceKrw = parseManwonInput(maxText)
                                     .takeIf { it > 0 } ?: 2_000_000_000,
+                                minAreaSqm = pyeongToSqm(minPyeong) ?: 0.0,
+                                // 비우면 null - 상한 없음이다.
+                                maxAreaSqm = pyeongToSqm(maxPyeong),
                             )
                         )
                         draft = FilterProfile(sido = emptyList())
+                        minPyeong = ""
+                        maxPyeong = ""
                     },
                     enabled = !state.loading && state.isConfigured,
                     modifier = Modifier.fillMaxWidth(),

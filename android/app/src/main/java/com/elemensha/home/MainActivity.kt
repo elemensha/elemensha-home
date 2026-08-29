@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
@@ -36,11 +37,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.elemensha.home.ui.FiltersScreen
 import com.elemensha.home.ui.HomeTheme
 import com.elemensha.home.ui.ListingsScreen
+import com.elemensha.home.ui.MapScreen
 import com.elemensha.home.ui.PlanScreen
 import com.elemensha.home.ui.SettingsScreen
 
 private enum class Tab(val label: String, val icon: ImageVector) {
     LISTINGS("물건", Icons.Filled.Home),
+    MAP("지도", Icons.Filled.Map),
     PLAN("자금계획", Icons.Filled.Calculate),
     FILTERS("조건", Icons.Filled.Tune),
     SETTINGS("설정", Icons.Filled.Settings),
@@ -127,6 +130,7 @@ private fun AppScaffold(viewModel: AppViewModel) {
                     onOpenDetail = viewModel::openDetail,
                     onToggleBiddable = viewModel::setBiddableOnly,
                 )
+                Tab.MAP -> MapScreen(state = state)
                 Tab.PLAN -> PlanScreen(
                     state = state,
                     onBorrowerChange = viewModel::updateBorrower,

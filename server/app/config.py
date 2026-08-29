@@ -45,6 +45,15 @@ class Settings:
     applyhome_key: str = field(default_factory=lambda: os.getenv("APPLYHOME_SERVICE_KEY", ""))
     court_key: str = field(default_factory=lambda: os.getenv("COURT_API_KEY", ""))
 
+    # 카카오 로컬 API - 주소를 좌표로 바꿔 지도에 찍는다.
+    # REST 키는 서버가 지오코딩에, JS 키는 지도 페이지가 쓴다. 둘은 다른
+    # 키다. JS 키는 developers.kakao.com 에서 도메인을 등록해야 동작한다.
+    kakao_rest_key: str = field(default_factory=lambda: os.getenv("KAKAO_REST_KEY", ""))
+    kakao_js_key: str = field(default_factory=lambda: os.getenv("KAKAO_JS_KEY", ""))
+    # 한 번 수집에 지오코딩할 최대 건수. 카카오는 하루 10만 회라 넉넉하지만
+    # 첫 백필에서 1.6만 건을 한꺼번에 돌리면 수집이 길어진다.
+    geocode_batch: int = field(default_factory=lambda: _env_int("GEOCODE_BATCH", 3000))
+
     # 비우면 전국. 온비드는 전국을 통째로 훑는 쪽이 시도별로 나눠 부르는
     # 것보다 호출이 적어서(9장 vs 12회) 기본값을 전국으로 둔다.
     target_sido: list[str] = field(
