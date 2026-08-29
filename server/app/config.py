@@ -47,10 +47,17 @@ class Settings:
 
     # 네이버 클라우드 플랫폼 Maps. 지도와 지오코딩을 한 계정으로 쓴다.
     # 지적편집도(필지 경계)가 나오는 것이 토지를 볼 때 결정적이다.
-    # 지오코딩은 Client ID/Secret 쌍, 지도 JS 는 별도의 Key ID 를 쓴다.
+    #
+    # 콘솔이 발급하는 건 Client ID / Client Secret 두 개뿐이다. 같은
+    # Client ID 가 지도 JS 의 ncpKeyId 이자 지오코딩의 헤더 키 ID 다.
+    # NAVER_MAP_KEY 는 따로 쓰고 싶을 때만 넣는다.
     naver_key_id: str = field(default_factory=lambda: os.getenv("NAVER_KEY_ID", ""))
     naver_key_secret: str = field(default_factory=lambda: os.getenv("NAVER_KEY_SECRET", ""))
-    naver_map_key: str = field(default_factory=lambda: os.getenv("NAVER_MAP_KEY", ""))
+    _naver_map_key: str = field(default_factory=lambda: os.getenv("NAVER_MAP_KEY", ""))
+
+    @property
+    def naver_map_key(self) -> str:
+        return self._naver_map_key or self.naver_key_id
     # 한 번 수집에 지오코딩할 최대 건수. 카카오는 하루 10만 회라 넉넉하지만
     # 첫 백필에서 1.6만 건을 한꺼번에 돌리면 수집이 길어진다.
     geocode_batch: int = field(default_factory=lambda: _env_int("GEOCODE_BATCH", 3000))
