@@ -8,6 +8,12 @@
     <!-- 인앱 업데이트: 내려받은 APK를 설치 화면에 넘긴다 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Android 11+ 는 다른 앱의 존재를 기본으로 숨긴다. 선언하지 않으면
+         온비드 앱이 깔려 있어도 getLaunchIntentForPackage 가 null 을 준다. -->
+    <queries>
+        <package android:name="net.ib.asp.android.kamco.mb" />
+    </queries>
+
     <application
         android:name=".HomeApplication"
         android:allowBackup="false"

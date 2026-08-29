@@ -39,8 +39,8 @@ from .store import Store
 STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 # 앱과 서버가 같은 버전 체계를 쓴다. 릴리스를 못 읽을 때의 바닥값이다.
-APP_VERSION = "0.9.1"
-APP_VERSION_CODE = 901
+APP_VERSION = "0.9.2"
+APP_VERSION_CODE = 902
 
 # 조건 매칭 시 훑어볼 최근 물건 수. 전부 객체로 만들어 비교해야 해서
 # 무제한으로 두면 작은 VM 의 메모리를 밀어낸다.
@@ -315,6 +315,11 @@ async def lifespan(app: FastAPI):
     moved = store.migrate_map_links()
     if moved:
         LOGGER.info("지도 링크를 네이버로 바꾼 물건 %d건", moved)
+    # 온비드 개편으로 옛 상세 주소가 전부 404 가 됐다.
+    from .sources.onbid import LIST_URL
+    fixed = store.migrate_onbid_urls(LIST_URL)
+    if fixed:
+        LOGGER.info("죽은 온비드 링크를 목록 주소로 바꾼 물건 %d건", fixed)
     task = asyncio.create_task(poller())
     try:
         yield

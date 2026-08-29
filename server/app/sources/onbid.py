@@ -37,12 +37,14 @@ from .base import ListingSource, parse_area, parse_krw, pick
 
 ENDPOINT = "https://apis.data.go.kr/B010003/OnbidRlstListSrvc2/getRlstCltrList2"
 
-# 온비드 물건 상세. 공고번호·공매번호·물건번호 조합으로 열린다.
-DETAIL_URL = (
-    "https://www.onbid.co.kr/op/cta/cltrdtl/collateralRealEstateDetail.do"
-    "?cltrNo={cltr}&plnmNo={plnm}&pbctNo={pbct}&pbctCdtnNo={cdtn}&scrnGrpCd=0001"
+# 온비드 물건 목록. 개편 뒤에는 물건 하나를 GET 으로 바로 여는 주소가 없다.
+# 상세는 POST 전용이고, 공유 URL(shortcut.do?code=...)은 서버가 그때그때
+# 만드는 난수라 우리가 조립할 수 없다. 목록까지만 열어 주고 물건관리번호를
+# 함께 보여준다 - 죽은 링크를 주는 것보다 낫다.
+LIST_URL = (
+    "https://www.onbid.co.kr/op/cltrpbancinf/clbtcltrclg"
+    "/cltrclbtcltrclg/CltrClbtCltrClgController/mvmnCltrRlstClg.do"
 )
-SEARCH_URL = "https://www.onbid.co.kr/op/cta/cltrmnmt/collateralRealEstateList.do"
 
 # 지번으로 지도를 연다. 맹지 여부(도로가 필지에 닿는지)는 속성 데이터로
 # 확정할 수 없고 지적도 공간 연산이 필요한데, 지적편집도를 켠 지도에서
@@ -299,19 +301,12 @@ class OnbidSource(ListingSource):
         except ValueError:
             failed_count = 0
 
-        cltr_no = pick(item, "onbidCltrno") or ""
-        plnm_no = pick(item, "onbidPbancNo") or ""
-        pbct_no = pick(item, "pbctNo") or ""
-        if cltr_no and plnm_no and pbct_no:
-            url = DETAIL_URL.format(cltr=cltr_no, plnm=plnm_no, pbct=pbct_no, cdtn=cdtn_no)
-        else:
-            url = SEARCH_URL
 
         return Listing(
             source=Source.ONBID,
             source_id=f"{cltr_mng_no}-{cdtn_no}" if cdtn_no else cltr_mng_no,
             title=title,
-            url=url,
+            url=LIST_URL,
             sido=sido,
             sigungu=pick(item, "lctnSggnm") or "",
             address=title,   # onbidCltrNm 자체가 전체 주소 + 물건 표시다

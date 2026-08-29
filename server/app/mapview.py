@@ -20,6 +20,14 @@ import html
 import json
 
 
+def _mgmt_no(item: dict) -> str:
+    """물건관리번호. source_id 는 '2026-0800-044360-6148657' 꼴이라 앞 셋만 쓴다."""
+    if item.get("source") != "onbid":
+        return ""
+    parts = str(item.get("source_id") or "").split("-")
+    return "-".join(parts[:3]) if len(parts) >= 3 else ""
+
+
 def to_markers(items: list[dict]) -> list[dict]:
     """지도에 필요한 것만 추린다. 통째로 실으면 페이지가 몇 MB 가 된다."""
     markers = []
@@ -40,6 +48,9 @@ def to_markers(items: list[dict]) -> list[dict]:
             "d": (it.get("deadline") or "")[:10],
             "b": bool(it.get("_biddable")),
             "u": it.get("url") or "",
+            # 온비드는 물건 하나를 바로 여는 주소가 없다. 목록을 열고
+            # 이 번호로 검색해야 하므로 번호를 같이 실어 보낸다.
+            "n": _mgmt_no(it),
         })
     return markers
 
@@ -118,6 +129,7 @@ def render(
          border-top:1px solid #eee; padding-top:7px; }}
   .iw button {{ background:#1a73e8; color:#fff; border:0; border-radius:6px;
          padding:5px 10px; font-size:12px; cursor:pointer; font-family:inherit; }}
+  .iw button.copy {{ background:#5f6368; }}
   .iw .risk {{ color:#b00020; font-size:12px; margin-top:6px; word-break:keep-all; }}
   .iw .sub {{ color:#555; font-size:12px; margin-top:5px; word-break:keep-all; }}
   .iw .muted {{ color:#888; font-size:12px; margin-top:6px; }}
@@ -185,12 +197,16 @@ function body(d, extra) {{
     + '<br>면적 ' + py
     + (d.f ? '<br>유찰 ' + d.f + '회' : '')
     + (d.d ? '<br>마감 ' + d.d : '')
+    + (d.n ? '<div class="sub">물건관리번호 ' + esc(d.n)
+           + '<br>온비드는 물건을 바로 여는 주소가 없습니다. 목록을 열고 이 번호로 검색하세요.</div>'
+           : '')
     + '<div id="dt">' + (extra || '') + '</div>'
     + '<div class="acts">'
     +   (extra === undefined
           ? '<button class="more" data-k="' + esc(d.k) + '">상세 보기</button>'
           : '')
-    +   (d.u ? '<a href="' + esc(d.u) + '" target="_blank" rel="noopener">공고 →</a>' : '')
+    +   (d.n ? '<button class="copy" data-n="' + esc(d.n) + '">번호 복사</button>' : '')
+    +   (d.u ? '<a href="' + esc(d.u) + '" target="_blank" rel="noopener">온비드 →</a>' : '')
     +   '<a href="https://map.naver.com/p/search/' + encodeURIComponent(d.a)
     +     '" target="_blank" rel="noopener">지도 →</a>'
     + '</div></div>';
@@ -215,6 +231,21 @@ function openInfo(d, extra) {{
     btn.addEventListener('click', ev => {{
       ev.stopPropagation();
       loadDetail(btn.getAttribute('data-k'));
+    }});
+  }}
+  const cp = document.querySelector('button.copy');
+  if (cp) {{
+    cp.addEventListener('click', async ev => {{
+      ev.stopPropagation();
+      const no = cp.getAttribute('data-n');
+      try {{
+        await navigator.clipboard.writeText(no);
+        cp.textContent = '복사됨';
+      }} catch (e) {{
+        // WebView 에서 클립보드가 막히는 경우가 있다. 그때는 번호를
+        // 선택할 수 있게 보여만 준다 - 조용히 실패하면 눌러도 그만이다.
+        cp.textContent = no;
+      }}
     }});
   }}
 }}

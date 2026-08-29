@@ -322,6 +322,21 @@ class Store:
             )
             return cursor.rowcount
 
+    def migrate_onbid_urls(self, new_url: str) -> int:
+        """404 가 된 옛 온비드 상세 링크를 목록 주소로 바꾼다.
+
+        온비드가 사이트를 개편해 예전 상세 주소가 전부 죽었다. 재수집으로
+        갱신되기를 기다리면 한도에 막힌 동안 계속 죽은 링크가 열린다.
+        """
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE listings SET payload = json_set(payload, '$.url', ?)"
+                " WHERE source = 'onbid'"
+                "   AND json_extract(payload,'$.url') LIKE '%collateralRealEstate%'",
+                (new_url,),
+            )
+            return cursor.rowcount
+
     def migrate_area_cap(self) -> int:
         """옛 기본값 1000.0 이 박힌 조건의 면적 상한을 푼다.
 

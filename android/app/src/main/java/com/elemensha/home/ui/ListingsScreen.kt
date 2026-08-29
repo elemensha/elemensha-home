@@ -25,7 +25,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -164,9 +166,8 @@ fun ListingsScreen(
                 listing = listing,
                 onOpen = {
                     if (listing.url.isNotBlank()) {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, listing.url.toUri())
-                        )
+                        // 온비드 링크는 온비드 앱으로 먼저 넘긴다.
+                        openExternalLink(context, listing.url)
                     }
                 },
                 onPlan = { onPlanForListing(listing) },
@@ -384,21 +385,36 @@ private fun ListingCard(
                 )
             }
 
+            // 온비드는 개편 뒤 물건 하나를 바로 여는 주소가 없다. 번호를
+            // 복사해 온비드에서 검색하는 것이 유일한 경로라 눌러서 복사되게 둔다.
+            if (listing.managementNo.isNotBlank()) {
+                val clipboard = LocalClipboardManager.current
+                var copied by remember(listing.managementNo) { mutableStateOf(false) }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (copied) "복사됨 · ${listing.managementNo}"
+                    else "물건관리번호 ${listing.managementNo} (눌러서 복사)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (copied) VerifiedGreen
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.clickable {
+                        clipboard.setText(AnnotatedString(listing.managementNo))
+                        copied = true
+                    },
+                )
+            }
+
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onPlan, modifier = Modifier.weight(1f)) {
                     Text("자금계획")
                 }
                 OutlinedButton(onClick = onOpen, modifier = Modifier.weight(1f)) {
-                    Text("원문")
+                    Text("온비드")
                 }
                 if (listing.mapUrl.isNotBlank()) {
                     OutlinedButton(
-                        onClick = {
-                            context.startActivity(
-                                Intent(Intent.ACTION_VIEW, listing.mapUrl.toUri())
-                            )
-                        },
+                        onClick = { openExternalLink(context, listing.mapUrl) },
                         modifier = Modifier.weight(1f),
                     ) { Text("지도") }
                 }
@@ -513,7 +529,7 @@ private fun DetailBlock(detail: ListingDetail) {
             val context = LocalContext.current
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
-                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) },
+                onClick = { openExternalLink(context, url) },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("감정평가서 보기 (${a["평가기관"].orEmpty()})") }
         }

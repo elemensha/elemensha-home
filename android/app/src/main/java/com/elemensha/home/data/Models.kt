@@ -49,6 +49,17 @@ data class Listing(
     /** 화면에 쓸 평 단위. 전용면적 기준이라 분양면적보다 작게 나온다. */
     val pyeong: Double? get() = exclusiveAreaSqm?.let { it / 3.3058 }
 
+    /**
+     * 온비드 물건관리번호. sourceId 는 '2026-0800-044360-6148657' 꼴이라 앞 셋만 쓴다.
+     *
+     * 온비드는 개편 뒤 물건 하나를 여는 주소가 없다. 이 번호를 복사해
+     * 온비드에서 검색하는 것이 유일한 경로라 화면에 내놓는다.
+     */
+    val managementNo: String
+        get() = if (source != "onbid") "" else sourceId.split("-").let {
+            if (it.size >= 3) it.take(3).joinToString("-") else ""
+        }
+
     private fun rawText(key: String): String =
         (raw as? JsonObject)?.get(key)?.jsonPrimitive?.contentOrNull.orEmpty()
 

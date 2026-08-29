@@ -1,8 +1,6 @@
 package com.elemensha.home.ui
 
 import android.annotation.SuppressLint
-import android.content.ActivityNotFoundException
-import android.content.Intent
 import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.WebView
@@ -88,7 +86,8 @@ fun MapScreen(state: UiState) {
                             if (isWeb && target.host != null && target.host == serverHost) {
                                 return false
                             }
-                            return openOutside(view, target.toString())
+                            val ctx = view?.context ?: return false
+                            return openExternalLink(ctx, target.toString())
                         }
                     }
                     loadUrl(url, headers)
@@ -112,47 +111,6 @@ fun MapScreen(state: UiState) {
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
             )
-        }
-    }
-}
-
-/**
- * 링크를 바깥에서 연다.
- *
- * intent:// 같은 앱 실행 스킴은 Intent.parseUri 로 풀어야 열린다. 그냥
- * ACTION_VIEW 로 던지면 아무 앱도 못 받고 조용히 실패한다.
- *
- * 열 앱이 없으면 원래 주소로 한 번 더 시도한다 - 네이버 지도 앱이 없는
- * 기기에서도 브라우저로는 열려야 한다.
- */
-private fun openOutside(view: WebView?, url: String): Boolean {
-    val context = view?.context ?: return false
-    val intent = try {
-        if (url.startsWith("intent:")) {
-            Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
-        } else {
-            Intent(Intent.ACTION_VIEW, Uri.parse(url))
-        }
-    } catch (e: Exception) {
-        return false
-    }
-    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    try {
-        context.startActivity(intent)
-        return true
-    } catch (e: ActivityNotFoundException) {
-        // 앱이 없으면 웹 주소로 떨어뜨린다.
-        val fallback = intent.getStringExtra("browser_fallback_url")
-            ?: intent.dataString?.takeIf { it.startsWith("http") }
-            ?: return false
-        return try {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(fallback))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-            true
-        } catch (e2: ActivityNotFoundException) {
-            false
         }
     }
 }
