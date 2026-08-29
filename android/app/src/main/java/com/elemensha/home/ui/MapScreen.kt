@@ -1,6 +1,9 @@
 package com.elemensha.home.ui
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -51,6 +54,8 @@ fun MapScreen(state: UiState) {
                   else mapOf("Authorization" to "Bearer ${state.apiToken}")
     // 이미 읽은 주소. WebView 를 불필요하게 다시 읽지 않으려고 들고 있다.
     var loaded by remember { mutableStateOf("") }
+    // 이 호스트만 WebView 안에서 연다. 나머지는 바깥 브라우저로 보낸다.
+    val serverHost = remember(base) { runCatching { Uri.parse(base).host }.getOrNull() }
 
     Column(Modifier.fillMaxSize()) {
         AndroidView(
@@ -66,23 +71,24 @@ fun MapScreen(state: UiState) {
                     settings.domStorageEnabled = true
                     settings.loadWithOverviewMode = true
                     settings.useWideViewPort = true
-                    // 지도 안에서만 돌게 한다. 공고 링크는 아래에서 밖으로 넘긴다.
+                    // 이 WebView 는 우리 지도 페이지만 띄운다. 바깥으로 나가는
+                    // 링크는 전부 밖에서 연다.
+                    //
+                    // onbid 만 내보냈더니 네이버 지도 링크가 WebView 안에서
+                    // 열렸고, 네이버가 앱 실행 스킴(intent://)으로 넘기는 것을
+                    // WebView 가 못 열어 "웹페이지를 사용할 수 없음"이 떴다.
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(
                             view: WebView?, request: android.webkit.WebResourceRequest?,
                         ): Boolean {
                             val target = request?.url ?: return false
-                            // 물건 공고는 외부 브라우저로. WebView 안에서 열면
-                            // 지도로 돌아올 방법이 없다.
-                            if (target.host?.contains("onbid") == true) {
-                                view?.context?.startActivity(
-                                    android.content.Intent(
-                                        android.content.Intent.ACTION_VIEW, target,
-                                    )
-                                )
-                                return true
+                            val scheme = target.scheme?.lowercase()
+                            val isWeb = scheme == "http" || scheme == "https"
+                            // 우리 서버 페이지는 그대로 WebView 안에서 돈다.
+                            if (isWeb && target.host != null && target.host == serverHost) {
+                                return false
                             }
-                            return false
+                            return openOutside(view, target.toString())
                         }
                     }
                     loadUrl(url, headers)
@@ -106,6 +112,47 @@ fun MapScreen(state: UiState) {
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
             )
+        }
+    }
+}
+
+/**
+ * 링크를 바깥에서 연다.
+ *
+ * intent:// 같은 앱 실행 스킴은 Intent.parseUri 로 풀어야 열린다. 그냥
+ * ACTION_VIEW 로 던지면 아무 앱도 못 받고 조용히 실패한다.
+ *
+ * 열 앱이 없으면 원래 주소로 한 번 더 시도한다 - 네이버 지도 앱이 없는
+ * 기기에서도 브라우저로는 열려야 한다.
+ */
+private fun openOutside(view: WebView?, url: String): Boolean {
+    val context = view?.context ?: return false
+    val intent = try {
+        if (url.startsWith("intent:")) {
+            Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+        } else {
+            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        }
+    } catch (e: Exception) {
+        return false
+    }
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    try {
+        context.startActivity(intent)
+        return true
+    } catch (e: ActivityNotFoundException) {
+        // 앱이 없으면 웹 주소로 떨어뜨린다.
+        val fallback = intent.getStringExtra("browser_fallback_url")
+            ?: intent.dataString?.takeIf { it.startsWith("http") }
+            ?: return false
+        return try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(fallback))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            true
+        } catch (e2: ActivityNotFoundException) {
+            false
         }
     }
 }
