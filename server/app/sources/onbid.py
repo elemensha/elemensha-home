@@ -51,7 +51,9 @@ SEARCH_URL = "https://www.onbid.co.kr/op/cta/cltrmnmt/collateralRealEstateList.d
 # 토지이음(eum.go.kr)은 PNU 로 바로 여는 URL 형식이 공개돼 있지 않다.
 # 시도해 본 luLandDetR.jsp?mode=view|search&pnu=... 는 둘 다 시스템 에러가
 # 난다. 주소를 직접 입력해야 하므로 링크로 걸지 않는다.
-MAP_URL = "https://map.kakao.com/?q="
+# 지도는 네이버로 통일했다. 앱 안의 지도와 다른 지도를 열면
+# 같은 물건이 다른 화면에서 다르게 보인다.
+MAP_URL = "https://map.naver.com/p/search/"
 
 # 재산유형코드. 실측으로 확인한 값만 넣었다(0001·0003·0006 등은 결과 없음).
 PROPERTY_DIVISIONS = {

@@ -21,8 +21,8 @@ import httpx
 
 LOGGER = logging.getLogger("elemensha.home.geocode")
 
-KAKAO_ADDRESS = "https://dapi.kakao.com/v2/local/search/address.json"
-KAKAO_KEYWORD = "https://dapi.kakao.com/v2/local/search/keyword.json"
+# 네이버 클라우드 플랫폼 지오코딩. 지도도 네이버라 계정을 하나만 만든다.
+NAVER_GEOCODE = "https://maps.apigw.ntruss.com/map-geocode/v2/geocode"
 
 # 괄호·꺾쇠 안의 부연 설명. 「오정 군부대 일원 도시개발사업」 같은 것.
 _PARENTHETICAL = re.compile(r"[（(\[［【「][^）)\]］】」]*[）)\]］】」]")
@@ -37,14 +37,12 @@ _DONG_SUFFIX = ("동", "리", "가", "읍", "면", "로", "길")
 def clean_address(address: str) -> str:
     """지번까지만 남긴다. 못 자르면 원본을 그대로 돌려준다.
 
-    자르지 못한 주소는 지번 검색이 실패하므로 키워드 검색으로 넘어간다.
-    억지로 자르면 엉뚱한 곳을 찍으므로 실패하는 편이 낫다.
+    억지로 자르면 엉뚱한 곳을 찍는다. 못 찾고 지도에서 빠지는 편이 낫다.
     """
     text = _PARENTHETICAL.sub(" ", address or "")
     text = text.replace("　", " ")
-    # '용정리 1013, 산209' 처럼 지번 뒤에 쉼표로 다른 필지가 붙는다.
-    # 구두점을 떼지 않으면 '1013,' 이 지번으로 안 잡힌다.
-    # '903-29,30' 처럼 띄어쓰기 없이 필지가 이어 붙는다. 앞의 것만 쓴다.
+    # '용정리 1013, 산209' 나 '903-29,30' 처럼 쉼표로 다른 필지가 붙는다.
+    # 앞의 것만 쓴다. 구두점을 떼지 않으면 '1013,' 이 지번으로 안 잡힌다.
     text = re.sub(r"(\d)\s*,\s*(?=\d)", r"\1 ", text)
     # '산 190-1' 은 '산190-1' 과 같은 뜻인데 토큰이 갈라진다.
     text = re.sub(r"\b산\s+(?=\d)", "산", text)
@@ -69,34 +67,44 @@ def clean_address(address: str) -> str:
 
 
 class Geocoder:
-    """카카오 로컬 API. 지번 검색을 먼저, 실패하면 키워드 검색."""
+    """주소 -> 좌표. 네이버 클라우드 플랫폼 지오코딩.
 
-    def __init__(self, rest_key: str, store=None, delay: float = 0.05) -> None:
-        self.rest_key = (rest_key or "").strip()
+    지번 주소만 다룬다. 지번이 없는 이름뿐인 주소('천왕2지구 주차장3')는
+    못 찾고 넘어간다 - 실제 주소 250건 중 2건이라 지도를 위해 엉뚱한
+    좌표를 만들어 낼 이유가 없다.
+    """
+
+    def __init__(self, key_id: str, key_secret: str, store=None, delay: float = 0.05) -> None:
+        self.key_id = (key_id or "").strip()
+        self.key_secret = (key_secret or "").strip()
         self.store = store
-        # 카카오 로컬은 하루 10만 회라 여유가 있지만, 초당 폭주는 막는다.
         self.delay = delay
         self.api_calls = 0
 
     @property
     def configured(self) -> bool:
-        return bool(self.rest_key)
+        return bool(self.key_id and self.key_secret)
 
-    async def _query(self, client: httpx.AsyncClient, url: str, query: str):
+    async def _query(self, client: httpx.AsyncClient, query: str):
         self.api_calls += 1
         response = await client.get(
-            url,
-            params={"query": query, "size": 1},
-            headers={"Authorization": f"KakaoAK {self.rest_key}"},
+            NAVER_GEOCODE,
+            params={"query": query},
+            headers={
+                "X-NCP-APIGW-API-KEY-ID": self.key_id,
+                "X-NCP-APIGW-API-KEY": self.key_secret,
+            },
             timeout=10.0,
         )
         response.raise_for_status()
-        docs = response.json().get("documents") or []
-        if not docs:
+        data = response.json()
+        found = data.get("addresses") or []
+        if not found:
             return None
-        doc = docs[0]
+        first = found[0]
         try:
-            return float(doc["y"]), float(doc["x"])
+            # 네이버는 x 가 경도, y 가 위도다. 뒤집으면 지도에 바다가 찍힌다.
+            return float(first["y"]), float(first["x"])
         except (KeyError, TypeError, ValueError):
             return None
 
@@ -112,12 +120,8 @@ class Geocoder:
                 # (None, None) 은 '전에 찾아봤지만 없었다'는 뜻이다.
                 return hit if hit[0] is not None else None
 
-        found = None
         try:
-            found = await self._query(client, KAKAO_ADDRESS, key)
-            if found is None:
-                # 지번이 아닌 이름뿐인 주소('천왕2지구 주차장3')를 위한 2차 시도.
-                found = await self._query(client, KAKAO_KEYWORD, key)
+            found = await self._query(client, key)
         except Exception as exc:
             # 네트워크·한도 문제는 캐시하지 않는다. 캐시하면 키를 고친
             # 뒤에도 영영 안 찾는다.

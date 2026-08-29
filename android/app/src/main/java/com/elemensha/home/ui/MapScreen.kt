@@ -62,7 +62,7 @@ fun MapScreen(state: UiState) {
                         ViewGroup.LayoutParams.MATCH_PARENT,
                     )
                     settings.javaScriptEnabled = true
-                    // 카카오 지도 타일이 여러 호스트에서 온다.
+                    // 네이버 지도 타일이 여러 호스트에서 온다.
                     settings.domStorageEnabled = true
                     settings.loadWithOverviewMode = true
                     settings.useWideViewPort = true

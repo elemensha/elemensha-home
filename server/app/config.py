@@ -45,11 +45,12 @@ class Settings:
     applyhome_key: str = field(default_factory=lambda: os.getenv("APPLYHOME_SERVICE_KEY", ""))
     court_key: str = field(default_factory=lambda: os.getenv("COURT_API_KEY", ""))
 
-    # 카카오 로컬 API - 주소를 좌표로 바꿔 지도에 찍는다.
-    # REST 키는 서버가 지오코딩에, JS 키는 지도 페이지가 쓴다. 둘은 다른
-    # 키다. JS 키는 developers.kakao.com 에서 도메인을 등록해야 동작한다.
-    kakao_rest_key: str = field(default_factory=lambda: os.getenv("KAKAO_REST_KEY", ""))
-    kakao_js_key: str = field(default_factory=lambda: os.getenv("KAKAO_JS_KEY", ""))
+    # 네이버 클라우드 플랫폼 Maps. 지도와 지오코딩을 한 계정으로 쓴다.
+    # 지적편집도(필지 경계)가 나오는 것이 토지를 볼 때 결정적이다.
+    # 지오코딩은 Client ID/Secret 쌍, 지도 JS 는 별도의 Key ID 를 쓴다.
+    naver_key_id: str = field(default_factory=lambda: os.getenv("NAVER_KEY_ID", ""))
+    naver_key_secret: str = field(default_factory=lambda: os.getenv("NAVER_KEY_SECRET", ""))
+    naver_map_key: str = field(default_factory=lambda: os.getenv("NAVER_MAP_KEY", ""))
     # 한 번 수집에 지오코딩할 최대 건수. 카카오는 하루 10만 회라 넉넉하지만
     # 첫 백필에서 1.6만 건을 한꺼번에 돌리면 수집이 길어진다.
     geocode_batch: int = field(default_factory=lambda: _env_int("GEOCODE_BATCH", 3000))

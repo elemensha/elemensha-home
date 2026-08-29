@@ -152,14 +152,14 @@ async def backfill_coords(client: httpx.AsyncClient, limit: int) -> dict:
     수집과 분리한 이유는 두 가지다. 온비드가 429 로 죽어도 지오코딩은
     계속 진행돼야 하고, 카카오가 죽어도 수집은 살아 있어야 한다.
     """
-    if not settings.kakao_rest_key:
-        return {"skipped": "KAKAO_REST_KEY 없음"}
+    if not (settings.naver_key_id and settings.naver_key_secret):
+        return {"skipped": "NAVER_KEY_ID/SECRET 없음"}
 
     pending = store.listings_missing_coords(limit)
     if not pending:
         return {"done": 0, "remaining": 0}
 
-    geo = Geocoder(settings.kakao_rest_key, store=store)
+    geo = Geocoder(settings.naver_key_id, settings.naver_key_secret, store=store)
     done = failed = 0
     for row in pending:
         found = await geo.locate(client, row.get("address", ""))
@@ -427,8 +427,8 @@ async def health() -> dict:
         # 못 붙여서'인지 구분되어야 한다.
         "geocode": {
             **store.geocode_coverage(),
-            "key_set": bool(settings.kakao_rest_key),
-            "map_key_set": bool(settings.kakao_js_key),
+            "key_set": bool(settings.naver_key_id and settings.naver_key_secret),
+            "map_key_set": bool(settings.naver_map_key),
         },
     }
 
@@ -574,7 +574,7 @@ async def get_map(
     return HTMLResponse(mapview.render(
         markers=markers,
         total=result["total_matched"],
-        js_key=settings.kakao_js_key,
+        map_key=settings.naver_map_key,
         filters_applied=result["filters_applied"],
         # 좌표가 없어 빠진 건수를 숨기면 "왜 목록보다 적지?"로 끝난다.
         no_coord_count=len(items) - len(markers),
