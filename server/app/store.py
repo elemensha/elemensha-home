@@ -202,6 +202,31 @@ class Store:
             for r in rows
         ]
 
+    def manual_listings(self, not_expired_at: str | None = None) -> list[dict]:
+        """손으로 넣은 물건 전부.
+
+        가격·소스 프리필터를 SQL 로 내리면 조건 밖의 수동 물건이 거기서
+        잘린다. 수동 물건은 몇 건뿐이라 통째로 읽어 합치는 편이 싸다.
+        """
+        query = ("SELECT payload, first_seen_at, notified_at FROM listings"
+                 " WHERE json_extract(payload,'$.raw.manual') = 1")
+        params: list = []
+        if not_expired_at is not None:
+            query += (" AND (json_extract(payload,'$.deadline') IS NULL"
+                      " OR substr(json_extract(payload,'$.deadline'),1,16) >= ?)")
+            params.append(not_expired_at)
+        query += " ORDER BY first_seen_at DESC"
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [
+            {
+                **json.loads(r["payload"]),
+                "first_seen_at": r["first_seen_at"],
+                "notified": r["notified_at"] is not None,
+            }
+            for r in rows
+        ]
+
     def count(self, not_expired_at: str | None = None) -> dict[str, int]:
         query = "SELECT source, COUNT(*) AS n FROM listings"
         params: list = []
@@ -287,13 +312,26 @@ class Store:
         return changed
 
     def prune(self, keep_days: int = 90) -> int:
-        """오래된 물건을 지운다. 작은 서버라 무한정 쌓아두지 않는다."""
+        """오래된 물건을 지운다. 작은 서버라 무한정 쌓아두지 않는다.
+
+        직접 넣은 법원경매 물건은 건드리지 않는다. 수집으로 갱신되지
+        않으니 last_seen_at 이 멈춰 있고, 그대로 두면 손으로 넣은 것이
+        90일 뒤 말없이 사라진다.
+        """
         with self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM listings WHERE last_seen_at < datetime('now', ?)",
+                "DELETE FROM listings WHERE last_seen_at < datetime('now', ?)"
+                " AND source != 'court'",
                 (f"-{keep_days} days",),
             )
             return cursor.rowcount
+
+    def delete_listing(self, dedupe_key: str) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM listings WHERE dedupe_key = ?", (dedupe_key,)
+            )
+            return cursor.rowcount > 0
 
     def drop_stale(self, source: str, hours: int = 36) -> int:
         """이번 수집에 안 잡힌 물건을 지운다.

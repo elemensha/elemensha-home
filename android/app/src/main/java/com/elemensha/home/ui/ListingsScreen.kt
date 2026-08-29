@@ -29,8 +29,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.elemensha.home.UiState
 import com.elemensha.home.data.Listing
+import com.elemensha.home.data.ManualCourtListing
 import com.elemensha.home.data.ListingDetail
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -53,8 +58,17 @@ fun ListingsScreen(
     onSort: (String) -> Unit,
     onOpenDetail: (Listing) -> Unit,
     onToggleBiddable: (Boolean) -> Unit,
+    onAddCourtListing: (ManualCourtListing) -> Unit,
 ) {
     val context = LocalContext.current
+    var showCourtEntry by remember { mutableStateOf(false) }
+
+    if (showCourtEntry) {
+        CourtEntryDialog(
+            onDismiss = { showCourtEntry = false },
+            onSave = { showCourtEntry = false; onAddCourtListing(it) },
+        )
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -82,8 +96,15 @@ fun ListingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                OutlinedButton(onClick = onRefresh, enabled = !state.loading) {
-                    Text("새로고침")
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // 법원경매는 자동 수집이 막혀 있어 손으로 넣는다.
+                    OutlinedButton(
+                        onClick = { showCourtEntry = true },
+                        enabled = state.isConfigured,
+                    ) { Text("＋ 경매") }
+                    OutlinedButton(onClick = onRefresh, enabled = !state.loading) {
+                        Text("새로고침")
+                    }
                 }
             }
         }

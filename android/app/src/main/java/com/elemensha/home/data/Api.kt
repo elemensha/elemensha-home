@@ -132,6 +132,14 @@ class Api(
 
     suspend fun plan(request: PlanRequest): PlanResponse = post("/api/plan", request)
 
+    suspend fun addManualListing(item: ManualCourtListing): ManualSaveResponse =
+        post("/api/listings/manual", item)
+
+    suspend fun deleteManualListing(dedupeKey: String) =
+        execute(buildRequest(
+            "/api/listings/manual/" + java.net.URLEncoder.encode(dedupeKey, "UTF-8")
+        ).delete().build())
+
     /** 물건 상세. 서버가 캐시하므로 같은 물건을 여러 번 열어도 API 한도를 안 쓴다. */
     suspend fun detail(dedupeKey: String): DetailResponse =
         get("/api/listings/" + java.net.URLEncoder.encode(dedupeKey, "UTF-8") + "/detail")

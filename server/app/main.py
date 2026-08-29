@@ -30,7 +30,7 @@ from .finance.rules import load_ruleset
 from .finance.tax import calculate_acquisition_cost
 from . import mapview
 from .geocode import Geocoder
-from .models import KST, FilterProfile, Source, now_kst_iso
+from .models import KST, FilterProfile, Listing, PropertyType, Source, now_kst_iso
 from .sources.onbid import OnbidSource
 from .sources.onbid_detail import fetch_detail
 from .sources.rtms import RtmsSource
@@ -518,6 +518,16 @@ def select_listings(
             if (not biddable_only or biddable(row))
             and any(p.matches(listing_from_dict(row)) for p in profiles)
         ]
+        # 손으로 넣은 물건은 조건을 건너뛰고 항상 붙인다. 조건은 자동 수집한
+        # 1.6만 건을 거르라고 있는 것이지, 직접 골라 담은 것을 숨기라고
+        # 있는 것이 아니다. 넣었는데 안 보이면 넣은 줄도 모른다.
+        seen = {r.get("dedupe_key") or (r.get("source"), r.get("source_id")) for r in rows}
+        for row in store.manual_listings(not_expired_at=cutoff):
+            if biddable_only and not biddable(row):
+                continue
+            key = row.get("dedupe_key") or (row.get("source"), row.get("source_id"))
+            if key not in seen:
+                rows.append(row)
         total = len(rows)
 
     if sort == "discount":
@@ -542,6 +552,96 @@ def select_listings(
         "scan_truncated": total >= MATCH_SCAN_LIMIT,
         "expired_hidden": not include_expired,
     }
+
+
+class ManualCourtListing(BaseModel):
+    """법원경매 물건을 손으로 넣는 입력.
+
+    법원경매정보(courtauction.go.kr)는 공식 API 가 없고 자동 수집을
+    보안정책으로 막는다. 그래서 목록은 사용자가 그 사이트에서 직접 보고,
+    관심 있는 물건만 여기에 옮겨 담는다. 옮겨 담고 나면 공매 물건과
+    똑같이 대출한도·취득세·ROI 계산과 지도에 들어간다.
+    """
+
+    case_no: str = Field(description="사건번호. 예: 2026타경1234")
+    item_no: str = Field(default="1", description="물건번호")
+    address: str = ""
+    property_type: str = PropertyType.LAND.value
+    appraised_price_krw: int | None = None
+    min_bid_price_krw: int | None = None
+    exclusive_area_sqm: float | None = None
+    failed_bid_count: int = 0
+    # 매각기일. 법원경매는 이 날 법원에 가서 입찰한다.
+    sale_date: str = ""
+    court_name: str = ""
+    land_category: str = ""
+    note: str = ""
+
+
+@app.post("/api/listings/manual")
+async def post_manual_listing(
+    body: ManualCourtListing, _: None = Depends(require_token)
+) -> dict:
+    from .sources.base import normalize_sido
+
+    case_no = body.case_no.strip()
+    if not case_no:
+        raise HTTPException(status_code=400, detail="사건번호가 필요하다")
+
+    sido, sigungu = normalize_sido(body.address)
+    try:
+        prop_type = PropertyType(body.property_type)
+    except ValueError:
+        prop_type = PropertyType.OTHER
+
+    # 매각기일 당일에만 '입찰 가능'이 된다. 법원경매는 기일입찰이라
+    # 그날 법원에 가야 하고, 전날까지는 준비중이 맞다.
+    bid_start = deadline = None
+    if body.sale_date:
+        day = body.sale_date[:10]
+        bid_start = f"{day}T00:00"
+        deadline = f"{day}T23:59"
+
+    listing = Listing(
+        source=Source.COURT,
+        source_id=f"{case_no}-{body.item_no.strip() or '1'}",
+        title=f"{case_no} {prop_type.value}".strip(),
+        # 사건번호로 바로 여는 URL 형식이 공개돼 있지 않다. 검색 화면까지만
+        # 열어 주고 사건번호는 제목에 둔다 - 붙여넣으면 바로 찾는다.
+        url="https://www.courtauction.go.kr/pgj/index.on"
+            "?w2xPath=/pgj/ui/pgj100/PGJ159M00.xml",
+        sido=sido,
+        sigungu=sigungu,
+        address=body.address.strip(),
+        property_type=prop_type,
+        exclusive_area_sqm=body.exclusive_area_sqm,
+        appraised_price_krw=body.appraised_price_krw,
+        min_bid_price_krw=body.min_bid_price_krw,
+        failed_bid_count=body.failed_bid_count,
+        deadline=deadline,
+        bid_start=bid_start,
+        bid_status="",
+        raw={
+            "manual": True,
+            "case_no": case_no,
+            "court_name": body.court_name.strip(),
+            "usage_minor": body.land_category.strip(),
+            "note": body.note.strip(),
+        },
+    )
+    store.upsert(listing)
+    return {"ok": True, "dedupe_key": listing.dedupe_key}
+
+
+@app.delete("/api/listings/manual/{dedupe_key:path}")
+async def delete_manual_listing(
+    dedupe_key: str, _: None = Depends(require_token)
+) -> dict:
+    if not dedupe_key.startswith(f"{Source.COURT.value}:"):
+        # 수집으로 들어온 물건은 이 경로로 지우지 못하게 한다. 다음
+        # 수집에 되살아나므로 지운 줄 알았다가 다시 보게 된다.
+        raise HTTPException(status_code=400, detail="직접 넣은 물건만 지울 수 있다")
+    return {"deleted": store.delete_listing(dedupe_key)}
 
 
 @app.get("/map", response_class=HTMLResponse)

@@ -320,3 +320,26 @@ data class HealthResponse(
     @SerialName("source_coverage") val sourceCoverage: SourceCoverage = SourceCoverage(),
     @SerialName("auth_enabled") val authEnabled: Boolean = false,
 )
+
+/** 법원경매 물건 수동 등록. 서버 `/api/listings/manual` 과 필드가 일치해야 한다. */
+@Serializable
+data class ManualCourtListing(
+    @SerialName("case_no") val caseNo: String,
+    @SerialName("item_no") val itemNo: String = "1",
+    val address: String = "",
+    @SerialName("property_type") val propertyType: String = "토지",
+    @SerialName("appraised_price_krw") val appraisedPriceKrw: Long? = null,
+    @SerialName("min_bid_price_krw") val minBidPriceKrw: Long? = null,
+    @SerialName("exclusive_area_sqm") val exclusiveAreaSqm: Double? = null,
+    @SerialName("failed_bid_count") val failedBidCount: Int = 0,
+    @SerialName("sale_date") val saleDate: String = "",
+    @SerialName("court_name") val courtName: String = "",
+    @SerialName("land_category") val landCategory: String = "",
+    val note: String = "",
+)
+
+@Serializable
+data class ManualSaveResponse(
+    val ok: Boolean = false,
+    @SerialName("dedupe_key") val dedupeKey: String = "",
+)

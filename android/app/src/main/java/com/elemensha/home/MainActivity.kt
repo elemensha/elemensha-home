@@ -129,6 +129,7 @@ private fun AppScaffold(viewModel: AppViewModel) {
                     onSort = viewModel::setSort,
                     onOpenDetail = viewModel::openDetail,
                     onToggleBiddable = viewModel::setBiddableOnly,
+                    onAddCourtListing = viewModel::addManualListing,
                 )
                 Tab.MAP -> MapScreen(state = state)
                 Tab.PLAN -> PlanScreen(

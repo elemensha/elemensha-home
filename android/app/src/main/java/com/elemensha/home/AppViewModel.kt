@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.elemensha.home.data.Api
 import com.elemensha.home.data.BorrowerProfile
 import com.elemensha.home.data.FilterProfile
+import com.elemensha.home.data.ManualCourtListing
 import com.elemensha.home.data.HealthResponse
 import com.elemensha.home.data.Listing
 import com.elemensha.home.data.ListingDetail
@@ -134,7 +135,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 목록만 다시 가져온다. 조건·정렬을 바꿀 때 쓴다. */
-    private fun reloadListings() = launchGuarded {
+    private fun reloadListings() = launchGuarded { fetchListings() }
+
+    /**
+     * 목록을 가져와 상태에 넣는다.
+     *
+     * launchGuarded 를 걸지 않은 순수 suspend 함수다. 다른 작업 뒤에 이어
+     * 부를 때 launchGuarded 안에서 또 launchGuarded 를 부르면, 바깥이 먼저
+     * 끝나 loading 이 꺼지고 안쪽 실패가 묻힌다.
+     */
+    private suspend fun fetchListings() {
         val current = _state.value
         val response = api.listings(
             filterId = current.selectedFilterId,
@@ -207,6 +217,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             holdYears = holdYears,
             sellOptions = listOf(price, reference),
         )
+    }
+
+    /** 법원경매 물건을 손으로 추가한다. 넣고 나면 목록을 다시 읽어 바로 보인다. */
+    fun addManualListing(item: ManualCourtListing) = launchGuarded {
+        api.addManualListing(item)
+        fetchListings()
+    }
+
+    fun deleteManualListing(dedupeKey: String) = launchGuarded {
+        api.deleteManualListing(dedupeKey)
+        fetchListings()
     }
 
     fun saveFilter(filter: FilterProfile) = launchGuarded {
