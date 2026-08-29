@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -40,6 +41,14 @@ APP_VERSION_CODE = 1
 
 # 조건 매칭 시 훑어볼 최근 물건 수. 전부 객체로 만들어 비교해야 해서
 # 무제한으로 두면 작은 VM 의 메모리를 밀어낸다.
+# uvicorn 은 자기 로거만 설정한다. 이걸 안 걸면 수집 로그가
+# journald 에 아예 안 남아서, 나중에 원인을 물어볼 데가 없다.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+LOGGER = logging.getLogger("elemensha.home")
+
 MATCH_SCAN_LIMIT = 6000
 
 # 한 번에 넘길 알림 최대 건수. 앱이 하루 한 번 가져가므로 하루치가
@@ -112,11 +121,23 @@ async def poll_once(name: str, source, client: httpx.AsyncClient) -> dict:
             if store.upsert(listing):
                 new_count += 1
     except Exception as exc:  # 어댑터 하나가 죽어도 서버는 살아 있어야 한다
-        store.log_poll(name, ok=False, fetched=fetched, error=f"{type(exc).__name__}: {exc}")
-        return {"source": name, "ok": False, "fetched": fetched, "error": str(exc)}
+        calls = getattr(source, "api_calls", None)
+        store.log_poll(
+            name, ok=False, fetched=fetched,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        LOGGER.warning("%s 수집 실패 (API %s회): %s", name, calls, exc)
+        return {"source": name, "ok": False, "fetched": fetched,
+                "api_calls": calls, "error": str(exc)}
 
+    calls = getattr(source, "api_calls", None)
     store.log_poll(name, ok=True, fetched=fetched, new_count=new_count)
-    return {"source": name, "ok": True, "fetched": fetched, "new": new_count}
+    # 호출 수를 추정으로 잡았다가 일일 한도를 실제로 넘긴 적이 있다.
+    # 로그에 남겨야 다음에 주기를 조정할 근거가 생긴다.
+    LOGGER.info("%s 수집 완료: %d건 (신규 %d) / API %s회",
+                name, fetched, new_count, calls)
+    return {"source": name, "ok": True, "fetched": fetched,
+            "new": new_count, "api_calls": calls}
 
 
 async def notify_pending(client: httpx.AsyncClient) -> int:

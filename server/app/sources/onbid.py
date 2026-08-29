@@ -115,6 +115,9 @@ class OnbidSource(ListingSource):
         self.sale_only = sale_only
         # 준비중까지 볼지. 진행중만 보면 호출이 20분의 1로 줄어 자주 돌 수 있다.
         self.include_upcoming = include_upcoming
+        # 실제 API 호출 수. 추정으로 한도를 잡았다가 실제로 넘긴 적이
+        # 있어서, 이제는 세어서 기록한다.
+        self.api_calls = 0
 
     async def fetch(self, client: httpx.AsyncClient) -> list[Listing]:
         return [x async for x in self.stream(client)]
@@ -148,12 +151,16 @@ class OnbidSource(ListingSource):
                 errors.append(f"{name}/준비중: {exc}")
 
         if not yielded and errors:
-            raise RuntimeError("온비드 조회가 전부 실패했다 - " + "; ".join(errors[:3]))
+            raise RuntimeError(
+                f"온비드 조회가 전부 실패했다 (API {self.api_calls}회) - "
+                + "; ".join(errors[:3])
+            )
 
     async def _page(
         self, client: httpx.AsyncClient, division: str, status: str, page: int
     ) -> tuple[int, list[dict]]:
         """한 페이지. (totalCount, items)."""
+        self.api_calls += 1
         response = await client.get(
             ENDPOINT,
             params={
