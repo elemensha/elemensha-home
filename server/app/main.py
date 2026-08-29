@@ -155,7 +155,28 @@ async def backfill_coords(client: httpx.AsyncClient, limit: int) -> dict:
     if not (settings.naver_key_id and settings.naver_key_secret):
         return {"skipped": "NAVER_KEY_ID/SECRET 없음"}
 
-    pending = store.listings_missing_coords(limit)
+    # 조건에 맞는 물건부터 좌표를 붙인다. 최근 수집순으로만 돌리면 방금
+    # 들어온 실거래가 수천 건을 먼저 먹고, 정작 지도에서 볼 물건은 맨 뒤로
+    # 밀린다 - 지도를 열어도 한참 비어 있게 된다.
+    pending: list[dict] = []
+    seen: set[str] = set()
+    try:
+        wanted = select_listings(limit=MAP_MARKER_LIMIT, offset=0)["items"]
+    except Exception:  # 조건이 깨져 있어도 백필 자체는 돌아야 한다
+        wanted = []
+    for row in wanted:
+        key = f"{row.get('source')}:{row.get('source_id')}"
+        if row.get("lat") is None and row.get("address") and key not in seen:
+            seen.add(key)
+            pending.append({**row, "dedupe_key": key})
+        if len(pending) >= limit:
+            break
+
+    for row in store.listings_missing_coords(limit - len(pending)):
+        if row["dedupe_key"] not in seen:
+            seen.add(row["dedupe_key"])
+            pending.append(row)
+
     if not pending:
         return {"done": 0, "remaining": 0}
 
