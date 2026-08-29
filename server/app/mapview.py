@@ -28,6 +28,7 @@ def to_markers(items: list[dict]) -> list[dict]:
         if lat is None or lon is None:
             continue
         markers.append({
+            "k": f"{it.get('source')}:{it.get('source_id')}",
             "la": lat,
             "lo": lon,
             "t": (it.get("title") or "")[:60],
@@ -50,6 +51,7 @@ def render(
     map_key: str,
     filters_applied: list[str],
     no_coord_count: int,
+    api_token: str = "",
 ) -> str:
     if not map_key:
         return _notice(
@@ -68,6 +70,7 @@ def render(
         return _notice("표시할 물건이 없습니다", detail)
 
     payload = json.dumps(markers, ensure_ascii=False, separators=(",", ":"))
+    token_js = json.dumps(api_token or "")
     applied = html.escape(", ".join(filters_applied)) if filters_applied else "전체"
     missing = (
         f'<span class="warn">좌표 없음 {no_coord_count}건 제외</span>'
@@ -91,10 +94,13 @@ def render(
   #count {{ font-weight:600; }}
   .warn {{ color:#b26a00; }}
   label {{ display:flex; align-items:center; gap:4px; }}
-  .pin {{ width:13px; height:13px; border-radius:50%; border:2px solid #fff;
-          box-shadow:0 1px 3px rgba(0,0,0,.4); }}
-  .pin.live {{ background:#0a7c2f; }}
-  .pin.soon {{ background:#9aa0a6; }}
+  /* 점 하나로는 지도 위에서 안 보인다. 평수를 적은 알약으로 만들어
+     크기와 색으로 눈에 띄게 하고, 누르기 전에 규모를 알 수 있게 한다. */
+  .pin {{ padding:3px 7px; border-radius:11px; border:2px solid #fff; color:#fff;
+          font-size:11px; font-weight:700; white-space:nowrap; line-height:1.25;
+          box-shadow:0 1px 4px rgba(0,0,0,.45); }}
+  .pin.live {{ background:#e11d48; }}
+  .pin.soon {{ background:#1f2937; }}
   .cl {{ display:flex; align-items:center; justify-content:center; border-radius:50%;
          color:#fff; font-weight:700; font-size:12px; background:rgba(26,115,232,.85);
          border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.35); }}
@@ -103,6 +109,13 @@ def render(
   .iw b {{ display:block; margin-bottom:4px; }}
   .iw .addr {{ color:#666; font-size:12px; margin-bottom:6px; word-break:keep-all; }}
   .iw a {{ display:inline-block; margin-top:7px; color:#1a73e8; text-decoration:none; }}
+  .iw .acts {{ display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;
+         border-top:1px solid #eee; padding-top:7px; }}
+  .iw button {{ background:#1a73e8; color:#fff; border:0; border-radius:6px;
+         padding:5px 10px; font-size:12px; cursor:pointer; font-family:inherit; }}
+  .iw .risk {{ color:#b00020; font-size:12px; margin-top:6px; word-break:keep-all; }}
+  .iw .sub {{ color:#555; font-size:12px; margin-top:5px; word-break:keep-all; }}
+  .iw .muted {{ color:#888; font-size:12px; margin-top:6px; }}
   .live-t {{ color:#0a7c2f; font-weight:600; }}
   .soon-t {{ color:#777; }}
 </style></head><body>
@@ -123,6 +136,9 @@ def render(
 <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId={html.escape(map_key)}"></script>
 <script>
 const DATA = {payload};
+// 상세 조회에 쓴다. 이 페이지 자체가 인증을 통과해 받은 것이라
+// 여기 담긴 토큰은 이미 이 클라이언트가 갖고 있던 값이다.
+const TOKEN = {token_js};
 const PY = 3.305785;   // 1평 = 3.305785㎡
 
 const map = new naver.maps.Map('map', {{
@@ -146,19 +162,80 @@ function won(v) {{
   return eok ? eok + '억' : man.toLocaleString() + '만';
 }}
 
-function body(d) {{
+function esc(t) {{
+  return String(t == null ? '' : t).replace(/[&<>"]/g,
+    c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}})[c]);
+}}
+
+function body(d, extra) {{
   const py = d.s ? (d.s / PY).toFixed(1) + '평 (' + d.s.toFixed(1) + '㎡)' : '-';
   const rate = (d.p && d.m) ? ' · 감정가의 ' + Math.round(d.m / d.p * 100) + '%' : '';
   const st = d.b ? '<span class="live-t">지금 입찰 가능</span>'
                  : '<span class="soon-t">입찰 준비중</span>';
-  return '<div class="iw"><b>' + d.t + '</b>'
-    + '<div class="addr">' + d.a + '</div>'
+  return '<div class="iw"><b>' + esc(d.t) + '</b>'
+    + '<div class="addr">' + esc(d.a) + '</div>'
     + st + '<br>최저 ' + won(d.m) + rate
     + '<br>면적 ' + py
     + (d.f ? '<br>유찰 ' + d.f + '회' : '')
     + (d.d ? '<br>마감 ' + d.d : '')
-    + (d.u ? '<a href="' + d.u + '" target="_blank" rel="noopener">공고 보기 →</a>' : '')
-    + '</div>';
+    + '<div id="dt">' + (extra || '') + '</div>'
+    + '<div class="acts">'
+    +   (extra === undefined
+          ? '<button class="more" data-k="' + esc(d.k) + '">상세 보기</button>'
+          : '')
+    +   (d.u ? '<a href="' + esc(d.u) + '" target="_blank" rel="noopener">공고 →</a>' : '')
+    +   '<a href="https://map.naver.com/p/search/' + encodeURIComponent(d.a)
+    +     '" target="_blank" rel="noopener">지도 →</a>'
+    + '</div></div>';
+}}
+
+// 지도에서 물건을 눌렀을 때 목록 화면으로 되돌아가지 않게, 감정평가서와
+// 위험 요소를 여기서 바로 편다. 상세는 캐시되므로 두 번째부터는 즉시 뜬다.
+let openMarker = null;
+async function loadDetail(key) {{
+  const d = DATA.find(x => x.k === key);
+  if (!d) return;
+  document.getElementById('dt').innerHTML =
+    '<div class="muted">상세를 가져오는 중...</div>';
+  try {{
+    const r = await fetch('api/listings/' + encodeURIComponent(key) + '/detail',
+                          {{ headers: TOKEN ? {{ Authorization: 'Bearer ' + TOKEN }} : {{}} }});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const detail = (await r.json()).detail || {{}};
+    let h = '';
+    const risks = detail.risk_flags || [];
+    if (risks.length) {{
+      h += '<div class="risk">주의: ' + risks.map(esc).join(', ') + '</div>';
+    }}
+    if (detail.eviction_burden) {{
+      h += '<div class="risk">명도: ' + esc(detail.eviction_burden) + '</div>';
+    }}
+    const areas = detail.areas || [];
+    if (areas.length) {{
+      h += '<div class="sub">면적 내역: '
+        + areas.map(a => esc((a['구분'] || '') + ' ' + (a['면적'] || '')).trim()).join(', ')
+        + '</div>';
+    }}
+    for (const a of (detail.appraisals || [])) {{
+      if (a['감정평가서']) {{
+        h += '<a href="' + esc(a['감정평가서']) + '" target="_blank" rel="noopener">'
+          + '감정평가서 (' + esc(a['평가기관'] || '') + ') →</a>';
+      }}
+    }}
+    if (detail.usage_status) {{
+      h += '<div class="sub">이용 현황: ' + esc(detail.usage_status) + '</div>';
+    }}
+    if (detail.notes) {{
+      h += '<div class="sub">유의사항: ' + esc(detail.notes).slice(0, 300) + '</div>';
+    }}
+    if (!h) h = '<div class="muted">상세에 추가 정보가 없습니다.</div>';
+    iw.setContent(body(d, h));
+  }} catch (e) {{
+    // 실패를 삼키면 '눌러도 아무 일 없는 버튼'이 된다.
+    iw.setContent(body(d, '<div class="risk">상세를 못 가져왔습니다 ('
+      + esc(e.message) + ')</div>'));
+  }}
+  if (openMarker) iw.open(map, openMarker);
 }}
 
 // 네이버 v3 에는 클러스터러가 없다. 외부 라이브러리를 끌어오는 대신
@@ -166,13 +243,28 @@ function body(d) {{
 let shown = [];
 function clear() {{ shown.forEach(m => m.setMap(null)); shown = []; }}
 
+function pyeong(d) {{
+  if (d.s == null) return '?';
+  const p = d.s / PY;
+  // 만 평이 넘는 땅이 실제로 있다(최대 42만평). 다 적으면 마커가 지도를 덮는다.
+  if (p >= 10000) return Math.round(p / 10000) + '만평';
+  return Math.round(p) + '평';
+}}
+
 function pin(d) {{
+  const label = pyeong(d);
   const m = new naver.maps.Marker({{
     position: new naver.maps.LatLng(d.la, d.lo), map: map,
-    icon: {{ content: '<div class="pin ' + (d.b ? 'live' : 'soon') + '"></div>',
-            anchor: new naver.maps.Point(8, 8) }},
+    icon: {{ content: '<div class="pin ' + (d.b ? 'live' : 'soon') + '">'
+                     + label + '</div>',
+            // 알약 너비가 글자 수에 따라 달라 가로 중앙을 정확히 못 맞춘다.
+            // 아래 꼭짓점이 좌표에 오도록 세로만 맞춘다.
+            anchor: new naver.maps.Point(0, 24) }},
   }});
   naver.maps.Event.addListener(m, 'click', () => {{
+    // 열자마자 상세를 붙이지는 않는다 - 온비드 상세는 일일 1,000회뿐이라
+    // 마커를 훑기만 해도 한도가 날아간다. 누를 때만 가져온다.
+    openMarker = m;
     iw.setContent(body(d)); iw.open(map, m);
   }});
   return m;
@@ -244,6 +336,14 @@ function draw() {{
     shown.push(cluster(items, la, lo2));
   }});
 }}
+
+// 말풍선 안의 버튼은 innerHTML 로 새로 그려지므로 리스너를 직접 못 건다.
+// 위임해서 받는다 - 인라인 onclick 은 따옴표 이스케이프가 한 번 깨지면
+// 조용히 동작만 안 하는 버튼이 된다.
+document.addEventListener('click', e => {{
+  const btn = e.target.closest && e.target.closest('button.more');
+  if (btn) loadDetail(btn.getAttribute('data-k'));
+}});
 
 naver.maps.Event.addListener(map, 'idle', draw);
 ['amin', 'amax'].forEach(id =>

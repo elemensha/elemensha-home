@@ -277,10 +277,26 @@ class Store:
                 "SELECT dedupe_key, payload FROM listings"
                 " WHERE json_extract(payload,'$.lat') IS NULL"
                 "   AND COALESCE(json_extract(payload,'$.address'),'') != ''"
+                # 한 번 못 찾은 주소는 빼둔다. 안 그러면 지번 없는 주소
+                # 200여 건을 60초마다 영원히 다시 집어 든다.
+                "   AND COALESCE(json_extract(payload,'$.geo_failed'), 0) = 0"
                 " ORDER BY first_seen_at DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [{"dedupe_key": r["dedupe_key"], **json.loads(r["payload"])} for r in rows]
+
+    def mark_geocode_failed(self, dedupe_key: str) -> None:
+        """좌표를 못 찾았다고 표시한다.
+
+        다시 수집되면 payload 가 통째로 갈리므로 표시도 사라진다 - 주소가
+        고쳐져 들어오면 자동으로 한 번 더 시도한다.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE listings SET payload = json_set(payload, '$.geo_failed', 1)"
+                " WHERE dedupe_key = ?",
+                (dedupe_key,),
+            )
 
     def set_coords(self, dedupe_key: str, lat: float, lon: float) -> None:
         """이미 저장된 물건에 좌표만 덧입힌다."""
@@ -290,6 +306,21 @@ class Store:
                 " WHERE dedupe_key = ?",
                 (lat, lon, dedupe_key),
             )
+
+    def migrate_map_links(self) -> int:
+        """저장된 카카오맵 링크를 네이버로 바꾼다.
+
+        소스 코드는 고쳤지만 이미 저장된 물건의 raw.map_url 은 옛 링크 그대로다.
+        온비드가 한도에 막혀 재수집이 안 되는 동안 앱에서 계속 카카오가 열린다.
+        """
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE listings SET payload ="
+                " replace(payload, 'https://map.kakao.com/?q=',"
+                "                  'https://map.naver.com/p/search/')"
+                " WHERE payload LIKE '%map.kakao.com%'"
+            )
+            return cursor.rowcount
 
     def migrate_area_cap(self) -> int:
         """옛 기본값 1000.0 이 박힌 조건의 면적 상한을 푼다.

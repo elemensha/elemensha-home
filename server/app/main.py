@@ -166,7 +166,8 @@ async def backfill_coords(client: httpx.AsyncClient, limit: int) -> dict:
         wanted = []
     for row in wanted:
         key = f"{row.get('source')}:{row.get('source_id')}"
-        if row.get("lat") is None and row.get("address") and key not in seen:
+        if (row.get("lat") is None and row.get("address")
+                and not row.get("geo_failed") and key not in seen):
             seen.add(key)
             pending.append({**row, "dedupe_key": key})
         if len(pending) >= limit:
@@ -186,6 +187,7 @@ async def backfill_coords(client: httpx.AsyncClient, limit: int) -> dict:
         found = await geo.locate(client, row.get("address", ""))
         if found is None:
             failed += 1
+            store.mark_geocode_failed(row["dedupe_key"])
             continue
         store.set_coords(row["dedupe_key"], found[0], found[1])
         done += 1
@@ -309,6 +311,10 @@ async def lifespan(app: FastAPI):
     freed = store.migrate_area_cap()
     if freed:
         LOGGER.info("면적 상한을 푼 조건 %d개", freed)
+    # 지도를 네이버로 옮겼는데 저장된 링크는 카카오 그대로였다.
+    moved = store.migrate_map_links()
+    if moved:
+        LOGGER.info("지도 링크를 네이버로 바꾼 물건 %d건", moved)
     task = asyncio.create_task(poller())
     try:
         yield
@@ -699,6 +705,9 @@ async def get_map(
         filters_applied=result["filters_applied"],
         # 좌표가 없어 빠진 건수를 숨기면 "왜 목록보다 적지?"로 끝난다.
         no_coord_count=len(items) - len(markers),
+        # 말풍선에서 상세를 가져오는 데 쓴다. 이 응답 자체가 인증을
+        # 통과해 나가므로 받는 쪽은 이미 이 토큰을 갖고 있다.
+        api_token=settings.api_token,
     ))
 
 
