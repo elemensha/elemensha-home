@@ -280,6 +280,8 @@ data class ListingDetail(
     val glossary: List<GlossaryItem> = emptyList(),
     /** 이 물건에서 무엇을 어떤 순서로 확인해야 하는지. */
     val checklist: List<CheckStep> = emptyList(),
+    /** 압류재산인지 신탁재산인지. 근거 법령이 달라 조심할 것도 다르다. */
+    @SerialName("sale_kind") val saleKind: SaleKind? = null,
     val rights: List<Map<String, String>> = emptyList(),
     val photos: List<String> = emptyList(),
     @SerialName("location_map") val locationMap: String = "",
@@ -383,4 +385,13 @@ data class CheckStep(
     /** 무엇을 보고 무엇을 결론짓나. */
     val judge: String = "",
     val cost: String = "",
+)
+
+/** 공매의 종류. 압류재산·신탁재산·국유재산·공유재산은 성격이 서로 다르다. */
+@Serializable
+data class SaleKind(
+    val kind: String = "",
+    val plain: String = "",
+    @SerialName("key_point") val keyPoint: String = "",
+    val law: String = "",
 )

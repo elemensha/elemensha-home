@@ -139,6 +139,11 @@ def render(
   .iw .gl b {{ display:block; margin-bottom:3px; color:#1a3a6b; }}
   .iw .gl .im {{ margin-top:4px; color:#b00020; }}
   .iw .gl .lw {{ margin-top:4px; color:#888; font-size:11px; }}
+  .iw .kd {{ margin-top:10px; padding:9px; background:#fff4e5; border-radius:6px;
+         font-size:12px; line-height:1.5; word-break:keep-all; }}
+  .iw .kd > b {{ display:block; margin-bottom:4px; color:#8a4b00; }}
+  .iw .kd .kp {{ margin-top:4px; color:#8a4b00; }}
+  .iw .kd .lw {{ margin-top:4px; color:#888; font-size:11px; }}
   .iw .ck {{ margin-top:10px; padding:9px; background:#eef6ee; border-radius:6px;
          font-size:12px; line-height:1.5; word-break:keep-all; }}
   .iw .ck > b {{ display:block; margin-bottom:6px; color:#14532d; }}
@@ -296,6 +301,17 @@ async function loadDetail(key) {{
     if (detail.usage_status) {{
       h += '<div class="sub">이용 현황: ' + esc(detail.usage_status) + '</div>';
     }}
+    // 이게 어떤 종류의 공매인지. 압류재산과 신탁재산은 근거 법령부터
+    // 달라서 조심할 것도 다르다. 점검 순서보다 먼저 알아야 한다.
+    const sk = detail.sale_kind;
+    if (sk && sk.kind) {{
+      h += '<div class="kd"><b>' + esc(sk.kind) + '</b>'
+        + '<div>' + esc(sk.plain) + '</div>'
+        + '<div class="kp">' + esc(sk.key_point) + '</div>'
+        + (sk.law ? '<div class="lw">' + esc(sk.law) + '</div>' : '')
+        + '</div>';
+    }}
+
     // 무엇을 어떤 순서로 확인해야 하는지. 순서가 곧 의존 관계다 -
     // 등기부를 먼저 떼야 기준선을 알고, 기준선을 알아야 전입일을 따진다.
     const cl = detail.checklist || [];

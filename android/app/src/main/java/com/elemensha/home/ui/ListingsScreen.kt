@@ -465,6 +465,37 @@ private fun DetailBlock(detail: ListingDetail) {
         Spacer(Modifier.height(8.dp))
     }
 
+    // 어떤 종류의 공매인지부터. 압류재산과 신탁재산은 근거 법령이 달라
+    // 조심할 것도 다르므로, 점검 순서보다 먼저 온다.
+    detail.saleKind?.takeIf { it.kind.isNotBlank() }?.let { sk ->
+        Card(
+            Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            colors = CardDefaults.cardColors(containerColor = WarningAmber.copy(alpha = 0.11f)),
+        ) {
+            Column(Modifier.padding(10.dp)) {
+                Text(sk.kind, style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(3.dp))
+                Text(sk.plain, style = MaterialTheme.typography.bodySmall)
+                if (sk.keyPoint.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        sk.keyPoint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = WarningAmber,
+                    )
+                }
+                if (sk.law.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        sk.law,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+
     // 무엇을 어떤 순서로 확인해야 하는지. 순서가 곧 의존 관계라
     // 번호를 그대로 보여준다 - 등기부를 먼저 떼야 전입일을 판단할 수 있다.
     if (detail.checklist.isNotEmpty()) {

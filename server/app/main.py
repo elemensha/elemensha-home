@@ -39,8 +39,8 @@ from .store import Store
 STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 # 앱과 서버가 같은 버전 체계를 쓴다. 릴리스를 못 읽을 때의 바닥값이다.
-APP_VERSION = "0.11.0"
-APP_VERSION_CODE = 1100
+APP_VERSION = "0.12.0"
+APP_VERSION_CODE = 1200
 
 # 조건 매칭 시 훑어볼 최근 물건 수. 전부 객체로 만들어 비교해야 해서
 # 무제한으로 두면 작은 VM 의 메모리를 밀어낸다.
@@ -800,6 +800,7 @@ async def listing_detail(
         용어 사전은 서버에 있으므로 앱을 새로 받지 않아도 늘어난다.
         """
         detail = dict(detail)
+        detail["sale_kind"] = checklist.sale_kind(listing, detail)
         detail["checklist"] = checklist.build(listing, detail)
         detail["glossary"] = glossary.explain(
             detail.get("notes", ""),
