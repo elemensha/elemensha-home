@@ -278,6 +278,8 @@ data class ListingDetail(
     val appraisals: List<Map<String, String>> = emptyList(),
     /** 서류 용어를 쉬운 말로 푼 것. 서버가 채워 보낸다. */
     val glossary: List<GlossaryItem> = emptyList(),
+    /** 이 물건에서 무엇을 어떤 순서로 확인해야 하는지. */
+    val checklist: List<CheckStep> = emptyList(),
     val rights: List<Map<String, String>> = emptyList(),
     val photos: List<String> = emptyList(),
     @SerialName("location_map") val locationMap: String = "",
@@ -367,4 +369,18 @@ data class GlossaryItem(
     val impact: String = "",
     /** 근거 조문·판례. 비어 있을 수 있다. */
     val law: String = "",
+)
+
+/** 점검 한 단계. 순서가 곧 의존 관계다 - 앞 단계를 해야 뒤 단계를 판단할 수 있다. */
+@Serializable
+data class CheckStep(
+    val step: Int = 0,
+    val title: String = "",
+    /** 왜 이걸 하나. */
+    val why: String = "",
+    /** 어디서, 어떻게. */
+    val how: String = "",
+    /** 무엇을 보고 무엇을 결론짓나. */
+    val judge: String = "",
+    val cost: String = "",
 )

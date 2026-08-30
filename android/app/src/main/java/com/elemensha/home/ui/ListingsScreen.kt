@@ -465,6 +465,60 @@ private fun DetailBlock(detail: ListingDetail) {
         Spacer(Modifier.height(8.dp))
     }
 
+    // 무엇을 어떤 순서로 확인해야 하는지. 순서가 곧 의존 관계라
+    // 번호를 그대로 보여준다 - 등기부를 먼저 떼야 전입일을 판단할 수 있다.
+    if (detail.checklist.isNotEmpty()) {
+        Text("이 순서로 확인하세요", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(6.dp))
+        detail.checklist.forEach { c ->
+            Card(
+                Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = VerifiedGreen.copy(alpha = 0.09f),
+                ),
+            ) {
+                Column(Modifier.padding(10.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            "${c.step}. ${c.title}",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (c.cost.isNotBlank()) {
+                            Text(
+                                c.cost,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(3.dp))
+                    Text(c.why, style = MaterialTheme.typography.bodySmall)
+                    if (c.how.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            c.how,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (c.judge.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            c.judge,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = VerifiedGreen,
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+
     // 서류에 나온 말을 쉬운 말로. 읽어도 무슨 뜻인지 모르겠다는 것이
     // 이 서류들의 가장 큰 벽이라, 원문보다 위에 둔다.
     if (detail.glossary.isNotEmpty()) {

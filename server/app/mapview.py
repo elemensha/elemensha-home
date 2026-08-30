@@ -139,6 +139,15 @@ def render(
   .iw .gl b {{ display:block; margin-bottom:3px; color:#1a3a6b; }}
   .iw .gl .im {{ margin-top:4px; color:#b00020; }}
   .iw .gl .lw {{ margin-top:4px; color:#888; font-size:11px; }}
+  .iw .ck {{ margin-top:10px; padding:9px; background:#eef6ee; border-radius:6px;
+         font-size:12px; line-height:1.5; word-break:keep-all; }}
+  .iw .ck > b {{ display:block; margin-bottom:6px; color:#14532d; }}
+  .iw .st {{ margin-top:7px; padding-top:7px; border-top:1px solid #d7e7d7; }}
+  .iw .st:first-of-type {{ border-top:0; padding-top:0; }}
+  .iw .st i {{ font-style:normal; font-weight:700; display:block; margin-bottom:3px; }}
+  .iw .st em {{ font-style:normal; font-weight:400; color:#666; font-size:11px; }}
+  .iw .st .hw {{ margin-top:3px; color:#444; }}
+  .iw .st .jd {{ margin-top:3px; color:#14532d; }}
   .live-t {{ color:#0a7c2f; font-weight:600; }}
   .soon-t {{ color:#777; }}
 </style></head><body>
@@ -287,6 +296,21 @@ async function loadDetail(key) {{
     if (detail.usage_status) {{
       h += '<div class="sub">이용 현황: ' + esc(detail.usage_status) + '</div>';
     }}
+    // 무엇을 어떤 순서로 확인해야 하는지. 순서가 곧 의존 관계다 -
+    // 등기부를 먼저 떼야 기준선을 알고, 기준선을 알아야 전입일을 따진다.
+    const cl = detail.checklist || [];
+    if (cl.length) {{
+      h += '<div class="ck"><b>이 물건은 이 순서로 확인하세요</b>';
+      for (const c of cl) {{
+        h += '<div class="st"><i>' + c.step + '. ' + esc(c.title)
+          + (c.cost ? ' <em>' + esc(c.cost) + '</em>' : '') + '</i>'
+          + '<div>' + esc(c.why) + '</div>'
+          + '<div class="hw">' + esc(c.how) + '</div>'
+          + '<div class="jd">' + esc(c.judge) + '</div></div>';
+      }}
+      h += '</div>';
+    }}
+
     // 서류 용어를 쉬운 말로. 읽어도 무슨 뜻인지 모르겠는 것이 가장 큰 벽이다.
     for (const g of (detail.glossary || [])) {{
       h += '<div class="gl"><b>' + esc(g.term) + '</b>'
