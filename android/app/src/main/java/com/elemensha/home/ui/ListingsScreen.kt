@@ -465,6 +465,62 @@ private fun DetailBlock(detail: ListingDetail) {
         Spacer(Modifier.height(8.dp))
     }
 
+    // 보증금을 떠안는지가 값을 매길 때 가장 크게 틀리는 지점이다.
+    // 상세를 열면 이게 제일 먼저 보여야 한다.
+    detail.tenancy?.takeIf { it.summary.isNotBlank() }?.let { tn ->
+        val danger = tn.level == "danger"
+        val tone = if (danger) MaterialTheme.colorScheme.error else WarningAmber
+        Card(
+            Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            colors = CardDefaults.cardColors(containerColor = tone.copy(alpha = 0.10f)),
+        ) {
+            Column(Modifier.padding(12.dp)) {
+                Text(
+                    "임차인 · 보증금 인수",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = tone,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    tn.summary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = tone,
+                )
+                tn.baseline?.let { b ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "기준선 ${b.date} ${b.kind}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                tn.tenants.forEach { t ->
+                    Spacer(Modifier.height(6.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "${t.role} ${t.name}" +
+                            (if (t.moveIn.isNotBlank()) " · 전입 ${t.moveIn}" else "") +
+                            " · 보증금 " + (t.depositKrw?.let { formatKrw(it) } ?: "미상"),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(t.verdict, style = MaterialTheme.typography.bodySmall)
+                }
+                if (tn.caveat.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        tn.caveat,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+
     // 어떤 종류의 공매인지부터. 압류재산과 신탁재산은 근거 법령이 달라
     // 조심할 것도 다르므로, 점검 순서보다 먼저 온다.
     detail.saleKind?.takeIf { it.kind.isNotBlank() }?.let { sk ->

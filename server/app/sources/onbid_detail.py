@@ -129,6 +129,14 @@ async def fetch_detail(
             "apslEvlYmd": "평가일", "apslEvlOrgNm": "평가기관",
             "apslEvlAmt": "평가액", "urlAdr": "감정평가서",
         }),
+        # 임대차 정보. 전입일자가 여기 있고, 이게 말소기준권리보다 빠르면
+        # 낙찰자가 보증금을 떠안는다. 안 읽으면 그 판단을 아예 못 한다.
+        "tenancies": _rows(item, "leasInfList", {
+            "irstDivNm": "구분", "cltrInprNm": "이름",
+            "mvinYmd": "전입일", "cfmtnYmd": "확정일자",
+            "bidGrteeAmt": "보증금", "mthrAmt": "차임",
+            "convGrteeAmt": "환산보증금",
+        }),
         "rights": _rows(item, "rgstPrmrInfList", {
             "irstDivNm": "구분", "cltrInprNm": "권리자",
             "rgstYmd": "등기일", "inprStngAmt": "설정액",

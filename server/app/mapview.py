@@ -139,6 +139,18 @@ def render(
   .iw .gl b {{ display:block; margin-bottom:3px; color:#1a3a6b; }}
   .iw .gl .im {{ margin-top:4px; color:#b00020; }}
   .iw .gl .lw {{ margin-top:4px; color:#888; font-size:11px; }}
+  .iw .tn {{ margin-top:10px; padding:9px; border-radius:6px; font-size:12px;
+         line-height:1.5; word-break:keep-all; border-left:4px solid; }}
+  .iw .tn.danger {{ background:#fdecea; border-color:#b00020; }}
+  .iw .tn.caution {{ background:#fff8e1; border-color:#b26a00; }}
+  .iw .tn > b {{ display:block; margin-bottom:4px; }}
+  .iw .tn.danger > b {{ color:#b00020; }}
+  .iw .tn.caution > b {{ color:#8a4b00; }}
+  .iw .tn .sm {{ font-weight:600; }}
+  .iw .tn .bl {{ margin-top:5px; color:#555; }}
+  .iw .tn .tt {{ margin-top:6px; padding-top:5px; border-top:1px solid rgba(0,0,0,.08); }}
+  .iw .tn .vd {{ margin-top:2px; color:#444; }}
+  .iw .tn .cv {{ margin-top:6px; color:#777; font-size:11px; }}
   .iw .kd {{ margin-top:10px; padding:9px; background:#fff4e5; border-radius:6px;
          font-size:12px; line-height:1.5; word-break:keep-all; }}
   .iw .kd > b {{ display:block; margin-bottom:4px; color:#8a4b00; }}
@@ -301,6 +313,25 @@ async function loadDetail(key) {{
     if (detail.usage_status) {{
       h += '<div class="sub">이용 현황: ' + esc(detail.usage_status) + '</div>';
     }}
+    // 보증금을 떠안는지가 값을 매길 때 가장 크게 틀리는 지점이다.
+    // 맨 위에, 눈에 띄게 둔다.
+    const tn = detail.tenancy;
+    if (tn && tn.summary) {{
+      h += '<div class="tn ' + esc(tn.level) + '"><b>임차인 · 보증금 인수</b>'
+        + '<div class="sm">' + esc(tn.summary) + '</div>';
+      if (tn.baseline) {{
+        h += '<div class="bl">기준선 ' + esc(tn.baseline.date) + ' '
+          + esc(tn.baseline.kind) + '</div>';
+      }}
+      for (const t of (tn.tenants || [])) {{
+        h += '<div class="tt">' + esc(t.role) + ' ' + esc(t.name)
+          + (t.move_in ? ' · 전입 ' + esc(t.move_in) : '')
+          + (t.deposit_krw ? ' · 보증금 ' + won(t.deposit_krw) : ' · 보증금 미상')
+          + '<div class="vd">' + esc(t.verdict) + '</div></div>';
+      }}
+      h += '<div class="cv">' + esc(tn.caveat) + '</div></div>';
+    }}
+
     // 이게 어떤 종류의 공매인지. 압류재산과 신탁재산은 근거 법령부터
     // 달라서 조심할 것도 다르다. 점검 순서보다 먼저 알아야 한다.
     const sk = detail.sale_kind;

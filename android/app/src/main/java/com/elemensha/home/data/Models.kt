@@ -282,6 +282,8 @@ data class ListingDetail(
     val checklist: List<CheckStep> = emptyList(),
     /** 압류재산인지 신탁재산인지. 근거 법령이 달라 조심할 것도 다르다. */
     @SerialName("sale_kind") val saleKind: SaleKind? = null,
+    /** 보증금을 떠안는지. 값을 매길 때 가장 크게 틀리는 지점이다. */
+    val tenancy: TenancyAnalysis? = null,
     val rights: List<Map<String, String>> = emptyList(),
     val photos: List<String> = emptyList(),
     @SerialName("location_map") val locationMap: String = "",
@@ -394,4 +396,35 @@ data class SaleKind(
     val plain: String = "",
     @SerialName("key_point") val keyPoint: String = "",
     val law: String = "",
+)
+
+/** 전입일과 말소기준권리를 비교한 결과. */
+@Serializable
+data class TenancyAnalysis(
+    /** danger = 보증금 인수 가능, caution = 확인 필요 */
+    val level: String = "",
+    val summary: String = "",
+    val baseline: Baseline? = null,
+    val tenants: List<TenantEntry> = emptyList(),
+    val caveat: String = "",
+)
+
+/** 말소기준권리. 이 날짜보다 앞선 권리는 낙찰자가 떠안는다. */
+@Serializable
+data class Baseline(
+    val date: String = "",
+    val kind: String = "",
+    val holder: String = "",
+)
+
+@Serializable
+data class TenantEntry(
+    val name: String = "",
+    val role: String = "",
+    @SerialName("move_in") val moveIn: String = "",
+    val confirmed: String = "",
+    @SerialName("deposit_krw") val depositKrw: Long? = null,
+    /** senior = 기준선보다 빠름(인수), junior = 이후(소멸), unknown */
+    val status: String = "",
+    val verdict: String = "",
 )
