@@ -465,6 +465,44 @@ private fun DetailBlock(detail: ListingDetail) {
         Spacer(Modifier.height(8.dp))
     }
 
+    // 서류에 나온 말을 쉬운 말로. 읽어도 무슨 뜻인지 모르겠다는 것이
+    // 이 서류들의 가장 큰 벽이라, 원문보다 위에 둔다.
+    if (detail.glossary.isNotEmpty()) {
+        Text("이 말이 무슨 뜻이냐면", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(6.dp))
+        detail.glossary.forEach { g ->
+            Card(
+                Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                ),
+            ) {
+                Column(Modifier.padding(10.dp)) {
+                    Text(g.term, style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.height(3.dp))
+                    Text(g.plain, style = MaterialTheme.typography.bodySmall)
+                    if (g.impact.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "→ ${g.impact}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = WarningAmber,
+                        )
+                    }
+                    if (g.law.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            g.law,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+
     listOf(
         "유의사항" to detail.notes,
         "이용현황" to detail.usageStatus,

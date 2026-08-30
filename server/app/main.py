@@ -28,7 +28,7 @@ from .finance.roi import ExitScenario, estimate_holding_cost, evaluate_scenario
 from .finance.provenance import Status, load_provenance
 from .finance.rules import load_ruleset
 from .finance.tax import calculate_acquisition_cost
-from . import mapview
+from . import glossary, mapview
 from .geocode import Geocoder
 from .models import KST, FilterProfile, Listing, PropertyType, Source, now_kst_iso
 from .sources.onbid import OnbidSource
@@ -39,8 +39,8 @@ from .store import Store
 STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 # 앱과 서버가 같은 버전 체계를 쓴다. 릴리스를 못 읽을 때의 바닥값이다.
-APP_VERSION = "0.9.2"
-APP_VERSION_CODE = 902
+APP_VERSION = "0.10.0"
+APP_VERSION_CODE = 1000
 
 # 조건 매칭 시 훑어볼 최근 물건 수. 전부 객체로 만들어 비교해야 해서
 # 무제한으로 두면 작은 VM 의 메모리를 밀어낸다.
@@ -793,10 +793,27 @@ async def listing_detail(
     if listing is None:
         raise HTTPException(status_code=404, detail="없는 물건")
 
+    def with_glossary(detail: dict) -> dict:
+        """서류에 나온 말을 쉬운 말로 풀어 함께 보낸다.
+
+        공매 서류는 읽어도 무슨 뜻인지 모르겠다는 것이 가장 큰 벽이다.
+        용어 사전은 서버에 있으므로 앱을 새로 받지 않아도 늘어난다.
+        """
+        detail = dict(detail)
+        detail["glossary"] = glossary.explain(
+            detail.get("notes", ""),
+            detail.get("usage_status", ""),
+            detail.get("vicinity", ""),
+            " ".join(detail.get("risk_flags") or []),
+            listing.get("title", ""),
+            str((listing.get("raw") or {}).get("usage", "")),
+        )
+        return detail
+
     if not refresh:
         cached = store.get_detail(dedupe_key)
         if cached is not None:
-            return {"detail": cached, "cached": True}
+            return {"detail": with_glossary(cached), "cached": True}
 
     if listing.get("source") != Source.ONBID.value:
         raise HTTPException(status_code=400, detail="온비드 물건만 상세 조회를 지원한다")
@@ -816,7 +833,7 @@ async def listing_detail(
         raise HTTPException(status_code=502, detail=f"상세 조회 실패: {exc}") from exc
 
     store.save_detail(dedupe_key, detail)
-    return {"detail": detail, "cached": False}
+    return {"detail": with_glossary(detail), "cached": False}
 
 
 @app.post("/api/notifications/baseline")

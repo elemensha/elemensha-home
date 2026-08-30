@@ -276,6 +276,8 @@ data class ListingDetail(
     @SerialName("first_notice_date") val firstNoticeDate: String = "",
     val areas: List<Map<String, String>> = emptyList(),
     val appraisals: List<Map<String, String>> = emptyList(),
+    /** 서류 용어를 쉬운 말로 푼 것. 서버가 채워 보낸다. */
+    val glossary: List<GlossaryItem> = emptyList(),
     val rights: List<Map<String, String>> = emptyList(),
     val photos: List<String> = emptyList(),
     @SerialName("location_map") val locationMap: String = "",
@@ -353,4 +355,16 @@ data class ManualCourtListing(
 data class ManualSaveResponse(
     val ok: Boolean = false,
     @SerialName("dedupe_key") val dedupeKey: String = "",
+)
+
+/** 공매 서류에 나온 말 하나의 풀이. */
+@Serializable
+data class GlossaryItem(
+    val term: String = "",
+    /** 이게 무슨 말인가. */
+    val plain: String = "",
+    /** 그래서 나한테 무슨 뜻인가. */
+    val impact: String = "",
+    /** 근거 조문·판례. 비어 있을 수 있다. */
+    val law: String = "",
 )

@@ -120,7 +120,8 @@ def render(
   .cl {{ display:flex; align-items:center; justify-content:center; border-radius:50%;
          color:#fff; font-weight:700; font-size:12px; background:rgba(26,115,232,.85);
          border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.35); }}
-  .iw {{ padding:11px 13px; font-size:13px; line-height:1.55; min-width:210px; max-width:290px;
+  .iw {{ padding:11px 13px; font-size:13px; line-height:1.55; min-width:210px; max-width:320px;
+         max-height:62vh; overflow-y:auto;
          background:#fff; border-radius:8px; }}
   .iw b {{ display:block; margin-bottom:4px; }}
   .iw .addr {{ color:#666; font-size:12px; margin-bottom:6px; word-break:keep-all; }}
@@ -133,6 +134,11 @@ def render(
   .iw .risk {{ color:#b00020; font-size:12px; margin-top:6px; word-break:keep-all; }}
   .iw .sub {{ color:#555; font-size:12px; margin-top:5px; word-break:keep-all; }}
   .iw .muted {{ color:#888; font-size:12px; margin-top:6px; }}
+  .iw .gl {{ margin-top:9px; padding:8px 9px; background:#f5f7fa; border-radius:6px;
+         font-size:12px; line-height:1.5; word-break:keep-all; }}
+  .iw .gl b {{ display:block; margin-bottom:3px; color:#1a3a6b; }}
+  .iw .gl .im {{ margin-top:4px; color:#b00020; }}
+  .iw .gl .lw {{ margin-top:4px; color:#888; font-size:11px; }}
   .live-t {{ color:#0a7c2f; font-weight:600; }}
   .soon-t {{ color:#777; }}
 </style></head><body>
@@ -280,6 +286,14 @@ async function loadDetail(key) {{
     }}
     if (detail.usage_status) {{
       h += '<div class="sub">이용 현황: ' + esc(detail.usage_status) + '</div>';
+    }}
+    // 서류 용어를 쉬운 말로. 읽어도 무슨 뜻인지 모르겠는 것이 가장 큰 벽이다.
+    for (const g of (detail.glossary || [])) {{
+      h += '<div class="gl"><b>' + esc(g.term) + '</b>'
+        + '<div>' + esc(g.plain) + '</div>'
+        + '<div class="im">→ ' + esc(g.impact) + '</div>'
+        + (g.law ? '<div class="lw">' + esc(g.law) + '</div>' : '')
+        + '</div>';
     }}
     if (detail.notes) {{
       h += '<div class="sub">유의사항: ' + esc(detail.notes).slice(0, 300) + '</div>';
