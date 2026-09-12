@@ -39,6 +39,7 @@ import com.elemensha.home.UiState
 import com.elemensha.home.data.Listing
 import com.elemensha.home.data.ManualCourtListing
 import com.elemensha.home.data.ListingDetail
+import com.elemensha.home.data.PlanResponse
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 
@@ -201,6 +202,9 @@ fun ListingsScreen(
                 detailLoading = state.detailLoading && state.detailKey ==
                     (listing.dedupeKey ?: (listing.source + ":" + listing.sourceId)),
                 onFavorite = { onToggleFavorite(listing) },
+                plan = if (state.detailKey ==
+                    (listing.dedupeKey ?: (listing.source + ":" + listing.sourceId))
+                ) state.detailPlan else null,
             )
         }
 
@@ -262,6 +266,7 @@ private fun ListingCard(
     detail: ListingDetail?,
     detailLoading: Boolean,
     onFavorite: () -> Unit,
+    plan: PlanResponse?,
 ) {
     val context = LocalContext.current
     Card(
@@ -475,7 +480,7 @@ private fun ListingCard(
                 Spacer(Modifier.height(8.dp))
                 CircularProgressIndicator(Modifier.height(20.dp), strokeWidth = 2.dp)
             }
-            detail?.let { DetailBlock(it) }
+            detail?.let { DetailBlock(it, plan) }
         }
     }
 }
@@ -496,7 +501,7 @@ private fun sourceLabel(source: String): String = when (source) {
  * 가격이 아니라 여기 적힌 점유·권리 관계다.
  */
 @Composable
-private fun DetailBlock(detail: ListingDetail) {
+private fun DetailBlock(detail: ListingDetail, plan: PlanResponse?) {
     Spacer(Modifier.height(10.dp))
     HorizontalDivider()
     Spacer(Modifier.height(10.dp))
@@ -507,6 +512,45 @@ private fun DetailBlock(detail: ListingDetail) {
             Text("· $it", style = MaterialTheme.typography.bodySmall, color = WarningAmber)
         }
         Spacer(Modifier.height(8.dp))
+    }
+
+    // 이 물건을 살 수 있는 돈이 되는지. 탭을 옮기면 어느 물건을 보고
+    // 있었는지가 끊겨서, 그 자리에서 보여준다.
+    plan?.let { pl ->
+        val short = pl.cashShortfallKrw > 0
+        Card(
+            Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = (if (short) WarningAmber else VerifiedGreen)
+                    .copy(alpha = 0.10f),
+            ),
+        ) {
+            Column(Modifier.padding(12.dp)) {
+                Text("이 물건 자금계획", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(4.dp))
+                KeyValue("대출 가능", formatKrw(pl.capacity.limitKrw) +
+                    " (" + pl.capacity.bindingConstraint + " 제약)")
+                KeyValue("취득 비용", formatKrw(pl.acquisitionCost.totalKrw))
+                KeyValue("필요한 현금", formatKrw(pl.cashNeededKrw))
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (short) "현금이 " + formatKrw(pl.cashShortfallKrw) + " 모자란다"
+                    else "가진 현금으로 된다",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (short) WarningAmber else VerifiedGreen,
+                )
+                // 보증금을 떠안는 물건이면 위 숫자에 그것이 안 들어 있다.
+                if (detail.tenancy?.level == "danger") {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "위 금액에 임차보증금은 들어 있지 않다. 인수하게 되면 그만큼 더 든다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
     }
 
     // 값이 어떻게 내려왔는지. 유찰로 떨어지는 것이 공매의 핵심 동학인데

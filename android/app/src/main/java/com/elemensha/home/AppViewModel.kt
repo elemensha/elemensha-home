@@ -51,6 +51,8 @@ data class UiState(
     val recentOnly: Boolean = false,
     val borrower: BorrowerProfile = BorrowerProfile(),
     val plan: PlanResponse? = null,
+    /** 지금 펼친 물건의 자금계획. 탭으로 튀지 않고 그 자리에서 본다. */
+    val detailPlan: PlanResponse? = null,
     /** 지금 펼쳐 놓은 물건의 상세. null 이면 아직 안 열었다. */
     val detailKey: String? = null,
     val detail: ListingDetail? = null,
@@ -427,10 +429,32 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val key = listing.dedupeKey ?: (listing.source + ":" + listing.sourceId)
         if (_state.value.detailKey == key) {
             // 같은 카드를 다시 누르면 접는다.
-            _state.update { it.copy(detailKey = null, detail = null) }
+            _state.update { it.copy(detailKey = null, detail = null, detailPlan = null) }
             return
         }
-        _state.update { it.copy(detailKey = key, detail = null, detailLoading = true) }
+        _state.update {
+            it.copy(detailKey = key, detail = null, detailPlan = null, detailLoading = true)
+        }
+        // 자금계획을 그 자리에서 함께 계산한다. 탭을 옮기면 어느 물건을
+        // 보고 있었는지가 끊긴다.
+        viewModelScope.launch {
+            val price = listing.effectivePriceKrw
+            if (price != null && price > 0) {
+                runCatching {
+                    api.plan(PlanRequest(
+                        profile = _state.value.borrower,
+                        priceKrw = price,
+                        exclusiveAreaSqm = listing.exclusiveAreaSqm ?: 84.9,
+                        isAuction = listing.source == "onbid" || listing.source == "court",
+                    ))
+                }.onSuccess { r ->
+                    // 그 사이 다른 물건을 폈으면 덮어쓰지 않는다.
+                    _state.update {
+                        if (it.detailKey == key) it.copy(detailPlan = r) else it
+                    }
+                }
+            }
+        }
         viewModelScope.launch {
             runCatching { api.detail(key).detail }
                 .onSuccess { d -> _state.update { it.copy(detail = d, detailLoading = false) } }
