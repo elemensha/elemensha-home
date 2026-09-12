@@ -52,6 +52,8 @@ def to_markers(items: list[dict]) -> list[dict]:
             # 이 번호로 검색해야 하므로 번호를 같이 실어 보낸다.
             "n": _mgmt_no(it),
             "fv": bool(it.get("favorite")),
+            # 지분은 낙찰받아도 혼자 못 쓴다. 누르기 전에 보여야 한다.
+            "sh": bool(it.get("share_sale")),
         })
     return markers
 
@@ -114,6 +116,9 @@ def render(
   #bar .row {{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }}
   #bar input[type=number] {{ width:60px; padding:4px 6px; border:1px solid #ccc;
          border-radius:6px; font-size:13px; }}
+  #bar input[type=search] {{ padding:5px 8px; border:1px solid #ccc;
+         border-radius:6px; font-size:13px; font-family:inherit; }}
+  #go {{ margin-left:0 !important; }}
   #count {{ font-weight:600; }}
   .upd {{ color:#888; }}
   #bar button {{ margin-left:auto; background:#eef1f5; border:0; border-radius:6px;
@@ -129,6 +134,7 @@ def render(
           box-shadow:0 1px 4px rgba(0,0,0,.45); }}
   .pin.live {{ background:#e11d48; }}
   .pin.soon {{ background:#1f2937; }}
+  .pin.share {{ background:#7c3aed; }}
   .cl {{ display:flex; align-items:center; justify-content:center; border-radius:50%;
          color:#fff; font-weight:700; font-size:12px; background:rgba(26,115,232,.85);
          border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.35); }}
@@ -190,6 +196,11 @@ def render(
     {capped}
     <button id="fold" type="button">접기</button>
   </div>
+  <div class="row" style="margin-top:6px">
+    <input type="search" id="q" placeholder="지역·주소로 이동 (예: 부산진구, 양평군 문호리)"
+           style="flex:1; min-width:150px">
+    <button id="go" type="button">이동</button>
+  </div>
   <div id="more">
     <div class="row" style="margin-top:6px">
       <label>가격 <input type="number" id="pmin" placeholder="최소" min="0"> ~
@@ -205,6 +216,7 @@ def render(
     </div>
     <div class="row" style="margin-top:5px">
       <label><input type="checkbox" id="fav"> 관심만</label>
+      <label><input type="checkbox" id="noshare"> 지분 제외</label>
       <label><input type="checkbox" id="cad"> 지적편집도</label>
       <button id="reset" type="button">조건 지우기</button>
     </div>
@@ -252,7 +264,9 @@ function body(d, extra) {{
                  : '<span class="soon-t">입찰 준비중</span>';
   // 온비드는 제목이 곧 소재지인 물건이 많다. 그대로 두면 같은 줄이 두 번 뜬다.
   const addr = (d.a && d.a !== d.t) ? '<div class="addr">' + esc(d.a) + '</div>' : '';
-  return '<div class="iw"><b>' + esc(d.t) + '</b>' + addr
+  const share = d.sh
+    ? '<div class="risk">지분 매각 — 낙찰받아도 혼자 쓸 수 없다</div>' : '';
+  return '<div class="iw"><b>' + esc(d.t) + '</b>' + addr + share
     + st + '<br>최저 ' + won(d.m) + rate
     + '<br>면적 ' + py
     + (d.f ? '<br>유찰 ' + d.f + '회' : '')
@@ -447,8 +461,8 @@ function pin(d) {{
   const label = pyeong(d);
   const m = new naver.maps.Marker({{
     position: new naver.maps.LatLng(d.la, d.lo), map: map,
-    icon: {{ content: '<div class="pin ' + (d.b ? 'live' : 'soon') + '">'
-                     + label + '</div>',
+    icon: {{ content: '<div class="pin ' + (d.sh ? 'share' : d.b ? 'live' : 'soon')
+                     + '">' + label + (d.sh ? ' 지분' : '') + '</div>',
             // 알약 너비가 글자 수에 따라 달라 가로 중앙을 정확히 못 맞춘다.
             // 아래 꼭짓점이 좌표에 오도록 세로만 맞춘다.
             anchor: new naver.maps.Point(0, 24) }},
@@ -496,9 +510,11 @@ function visible() {{
   const dd = parseFloat(document.getElementById('dday').value);
   const liveOnly = document.getElementById('live').checked;
   const favOnly = document.getElementById('fav').checked;
+  const noShare = document.getElementById('noshare').checked;
   return DATA.filter(d => {{
     if (liveOnly && !d.b) return false;
     if (favOnly && !d.fv) return false;
+    if (noShare && d.sh) return false;
     if (!isNaN(plo) || !isNaN(phi)) {{
       if (d.m == null) return false;
       if (!isNaN(plo) && d.m < plo) return false;
@@ -553,10 +569,36 @@ function draw() {{
   }});
 }}
 
+// 지역으로 바로 간다. 이게 없으면 전국 화면에서 손으로만 찾아가야 한다.
+// 서버가 이미 네이버 지오코딩을 쓰고 있어 같은 키로 해결된다.
+const qs = document.getElementById('q'), go = document.getElementById('go');
+async function moveTo() {{
+  const q = qs.value.trim();
+  if (!q) return;
+  const before = go.textContent;
+  go.textContent = '...';
+  try {{
+    const r = await fetch('api/geocode?q=' + encodeURIComponent(q),
+      {{ headers: TOKEN ? {{ Authorization: 'Bearer ' + TOKEN }} : {{}} }});
+    const j = await r.json();
+    if (j.lat == null) {{ go.textContent = '못 찾음'; }}
+    else {{
+      map.setCenter(new naver.maps.LatLng(j.lat, j.lon));
+      map.setZoom(13);
+      go.textContent = before;
+    }}
+  }} catch (e) {{
+    go.textContent = '실패';
+  }}
+  setTimeout(() => {{ go.textContent = before; }}, 2000);
+}}
+go.addEventListener('click', moveTo);
+qs.addEventListener('keydown', e => {{ if (e.key === 'Enter') moveTo(); }});
+
 naver.maps.Event.addListener(map, 'idle', draw);
 ['amin', 'amax', 'pmin', 'pmax', 'dday'].forEach(id =>
   document.getElementById(id).addEventListener('input', draw));
-['live', 'fav'].forEach(id =>
+['live', 'fav', 'noshare'].forEach(id =>
   document.getElementById(id).addEventListener('change', draw));
 
 // 헤더가 세로 화면의 5분의 1을 덮는다. 지도를 볼 때는 접어 둔다.
@@ -569,7 +611,7 @@ fold.addEventListener('click', () => {{
 document.getElementById('reset').addEventListener('click', () => {{
   ['amin', 'amax', 'pmin', 'pmax', 'dday'].forEach(
     id => document.getElementById(id).value = '');
-  ['live', 'fav'].forEach(id => document.getElementById(id).checked = false);
+  ['live', 'fav', 'noshare'].forEach(id => document.getElementById(id).checked = false);
   draw();
 }});
 draw();

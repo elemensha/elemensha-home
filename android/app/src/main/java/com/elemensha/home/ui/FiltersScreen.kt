@@ -192,6 +192,28 @@ fun FiltersScreen(
                     }
                 }
 
+                // 지분은 종류를 가리지 않고 나온다. 토지 조건 밖에 둔다.
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("지분 매각 제외", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "여러 명이 나눠 가진 것 중 한 사람 몫만 파는 물건이다. "
+                            + "낙찰받아도 혼자 쓸 수 없고 공유물분할 소송이 따라온다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = draft.excludeShareSale,
+                        onCheckedChange = { draft = draft.copy(excludeShareSale = it) },
+                    )
+                }
+
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(

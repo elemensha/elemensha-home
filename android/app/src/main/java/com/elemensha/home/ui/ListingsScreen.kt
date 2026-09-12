@@ -294,6 +294,15 @@ private fun ListingCard(
                         ),
                     )
                 }
+                if (listing.shareSale) {
+                    AssistChip(
+                        onClick = {},
+                        label = { Text("지분") },
+                        colors = AssistChipDefaults.assistChipColors(
+                            labelColor = MaterialTheme.colorScheme.error,
+                        ),
+                    )
+                }
                 if (listing.failedBidCount > 0) {
                     AssistChip(
                         onClick = {},

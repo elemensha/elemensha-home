@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS listings (
     deadline        TEXT,
     property_type   TEXT,
     sido            TEXT,
-    area_sqm        REAL
+    area_sqm        REAL,
+    share_sale      INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_listings_source ON listings(source);
 CREATE INDEX IF NOT EXISTS idx_listings_seen ON listings(first_seen_at DESC);
@@ -106,9 +107,20 @@ class Store:
         ("manual", "INTEGER", "$.raw.manual"),
     )
 
+    # 지분은 제목에서 알아본다. json_extract 로 뽑을 수 있는 값이 아니라
+    # 백필 SQL 을 따로 둔다.
+    SHARE_BACKFILL = (
+        "UPDATE listings SET share_sale ="
+        " (CASE WHEN json_extract(payload,'$.title') LIKE '%지분%'"
+        "       THEN 1 ELSE 0 END)"
+    )
+
     def _ensure_columns(self, conn) -> None:
         """이미 있는 DB 에 컬럼을 붙이고 한 번 채운다."""
         have = {r["name"] for r in conn.execute("PRAGMA table_info(listings)")}
+        if "share_sale" not in have:
+            conn.execute("ALTER TABLE listings ADD COLUMN share_sale INTEGER")
+            conn.execute(self.SHARE_BACKFILL)
         added = [c for c in self.COLUMNS if c[0] not in have]
         for name, kind, _ in added:
             conn.execute(f"ALTER TABLE listings ADD COLUMN {name} {kind}")
@@ -118,7 +130,7 @@ class Store:
             conn.execute(f"UPDATE listings SET {sets}")
         # 인덱스는 컬럼이 생긴 뒤에 만든다. SCHEMA 에 두면 옛 DB 에서
         # 컬럼보다 먼저 실행돼 'no such column' 으로 죽는다.
-        for name in ("deadline", "property_type", "sido", "manual"):
+        for name in ("deadline", "property_type", "sido", "manual", "share_sale"):
             conn.execute(
                 f"CREATE INDEX IF NOT EXISTS idx_listings_{name} ON listings({name})"
             )
@@ -158,14 +170,15 @@ class Store:
                     "INSERT INTO listings"
                     " (dedupe_key, source, payload, effective_price, first_seen_at,"
                     "  last_seen_at, deadline, property_type, sido, area_sqm,"
-                    "  land_category, farmland, manual)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "  land_category, farmland, manual, share_sale)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (listing.dedupe_key, listing.source.value, payload, price, now, now,
                      listing.deadline, listing.property_type.value, listing.sido,
                      listing.exclusive_area_sqm,
                      str(listing.raw.get("usage_minor") or ""),
                      1 if listing.raw.get("needs_farmland_permit") else 0,
-                     1 if listing.raw.get("manual") else 0),
+                     1 if listing.raw.get("manual") else 0,
+                     1 if listing.is_share_sale else 0),
                 )
                 conn.execute(
                     "INSERT INTO price_history(dedupe_key, price, seen_at) VALUES(?,?,?)",
@@ -188,14 +201,15 @@ class Store:
             conn.execute(
                 "UPDATE listings SET payload = ?, effective_price = ?, last_seen_at = ?,"
                 " deadline = ?, property_type = ?, sido = ?, area_sqm = ?,"
-                " land_category = ?, farmland = ?, manual = ?"
+                " land_category = ?, farmland = ?, manual = ?, share_sale = ?"
                 + (", notified_at = NULL" if price_dropped else "")
                 + " WHERE dedupe_key = ?",
                 (payload, price, now, listing.deadline, listing.property_type.value,
                  listing.sido, listing.exclusive_area_sqm,
                  str(listing.raw.get("usage_minor") or ""),
                  1 if listing.raw.get("needs_farmland_permit") else 0,
-                 1 if listing.raw.get("manual") else 0, listing.dedupe_key),
+                 1 if listing.raw.get("manual") else 0,
+                 1 if listing.is_share_sale else 0, listing.dedupe_key),
             )
             return price_dropped
 
@@ -232,6 +246,7 @@ class Store:
         max_area: float | None = None,
         land_categories: list[str] | None = None,
         exclude_farmland: bool = False,
+        exclude_share_sale: bool = False,
     ) -> tuple[str, list]:
         """조건을 SQL WHERE 절로 조립한다.
 
@@ -285,6 +300,8 @@ class Store:
             params += list(land_categories)
         if exclude_farmland:
             clauses.append("COALESCE(farmland, 0) = 0")
+        if exclude_share_sale:
+            clauses.append("COALESCE(share_sale, 0) = 0")
 
         return (" WHERE " + " AND ".join(clauses) if clauses else ""), params
 
@@ -349,8 +366,8 @@ class Store:
         query = "SELECT source, COUNT(*) AS n FROM listings"
         params: list = []
         if not_expired_at is not None:
-            query += (" WHERE json_extract(payload,'$.deadline') IS NULL"
-                      " OR substr(json_extract(payload,'$.deadline'),1,16) >= ?")
+            # 컬럼으로 본다. payload 에서 꺼내면 1.9만 행을 파싱한다.
+            query += " WHERE deadline IS NULL OR substr(deadline,1,16) >= ?"
             params.append(not_expired_at)
         query += " GROUP BY source"
         with self._connect() as conn:

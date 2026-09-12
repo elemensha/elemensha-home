@@ -85,6 +85,16 @@ class Listing:
         return f"{self.source.value}:{self.source_id}"
 
     @property
+    def is_share_sale(self) -> bool:
+        """지분만 파는 물건인지.
+
+        구조화된 필드가 없어 제목으로 본다. 실제 88건을 확인했더니
+        '(공유지분 5분의 1)', '[토지 및 건물 지분]', '(대,지분 18/117)'
+        처럼 제목에 적히고, 아파트 대지권을 잘못 잡는 경우는 없었다.
+        """
+        return "지분" in (self.title or "")
+
+    @property
     def is_expired(self) -> bool:
         """입찰 마감이 지났는지. 마감일이 없으면 만료로 보지 않는다.
 
@@ -152,6 +162,9 @@ class FilterProfile:
     land_categories: list[str] = field(default_factory=list)
     # 농지(전·답·과수원) 제외. 농지취득자격증명을 못 받으면 보증금을 잃는다.
     exclude_farmland: bool = False
+    # 지분 매각 제외. 낙찰받아도 혼자 쓸 수 없고 공유물분할 소송이
+    # 따라오므로, 초보자가 가장 먼저 피해야 할 물건이다.
+    exclude_share_sale: bool = False
     # 지금 입찰할 수 있는 물건만. 알림은 이쪽이 훨씬 유용하다 -
     # 3개월 뒤 물건을 오늘 알려줘 봐야 그때 가면 잊는다.
     biddable_only: bool = False
@@ -194,6 +207,10 @@ class FilterProfile:
                 return False
             if self.exclude_farmland and listing.raw.get("needs_farmland_permit"):
                 return False
+
+        # 지분은 종류를 가리지 않는다. 토지에도 상가에도 아파트에도 나온다.
+        if self.exclude_share_sale and listing.is_share_sale:
+            return False
 
         if self.min_discount_ratio is not None:
             if listing.discount_ratio is None or listing.discount_ratio < self.min_discount_ratio:

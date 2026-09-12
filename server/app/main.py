@@ -39,8 +39,8 @@ from .store import Store
 STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 # 앱과 서버가 같은 버전 체계를 쓴다. 릴리스를 못 읽을 때의 바닥값이다.
-APP_VERSION = "0.14.0"
-APP_VERSION_CODE = 1400
+APP_VERSION = "0.15.0"
+APP_VERSION_CODE = 1500
 
 # 조건 매칭 시 훑어볼 최근 물건 수. 전부 객체로 만들어 비교해야 해서
 # 무제한으로 두면 작은 VM 의 메모리를 밀어낸다.
@@ -624,6 +624,7 @@ def select_listings(
             where["max_area"] = one.max_area_sqm
             where["land_categories"] = one.land_categories or None
             where["exclude_farmland"] = one.exclude_farmland
+            where["exclude_share_sale"] = one.exclude_share_sale
             total = store.count_matching(**where)
             rows = store.listings(limit=page, offset=offset, **where)
             fast_path = True
@@ -669,6 +670,7 @@ def select_listings(
         row["favorite"] = (
             row.get("dedupe_key") or f"{row.get('source')}:{row.get('source_id')}"
         ) in favorites
+        row["share_sale"] = "지분" in (row.get("title") or "")
 
     return {
         "items": [_slim(i) for i in items] if slim else items,
@@ -833,6 +835,23 @@ async def get_listings(
         apply_filters=apply_filters, include_expired=include_expired,
         biddable_only=biddable_only, favorites_only=favorites_only, sort=sort,
     )
+
+
+@app.get("/api/geocode")
+async def geocode_query(q: str, _: None = Depends(require_token)) -> dict:
+    """지역·주소를 좌표로. 지도에서 그 자리로 이동하는 데 쓴다.
+
+    수집에 쓰는 캐시를 그대로 탄다. 같은 지역을 두 번 찾으면 두 번째는
+    호출이 나가지 않는다.
+    """
+    if not (settings.naver_key_id and settings.naver_key_secret):
+        raise HTTPException(status_code=503, detail="네이버 키가 없다")
+    geo = Geocoder(settings.naver_key_id, settings.naver_key_secret, store=store)
+    async with httpx.AsyncClient() as client:
+        found = await geo.locate(client, q)
+    if found is None:
+        return {"lat": None, "lon": None, "query": q}
+    return {"lat": found[0], "lon": found[1], "query": q}
 
 
 @app.get("/api/favorites")

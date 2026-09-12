@@ -29,6 +29,8 @@ data class Listing(
     @SerialName("exclusive_area_sqm") val exclusiveAreaSqm: Double? = null,
     /** 관심 물건으로 담아 뒀는지. 1.9만 건에서 놓치면 다시 못 찾는다. */
     val favorite: Boolean = false,
+    /** 지분 매각. 낙찰받아도 혼자 쓸 수 없다. */
+    @SerialName("share_sale") val shareSale: Boolean = false,
     @SerialName("appraised_price_krw") val appraisedPriceKrw: Long? = null,
     @SerialName("min_bid_price_krw") val minBidPriceKrw: Long? = null,
     @SerialName("asking_price_krw") val askingPriceKrw: Long? = null,
@@ -105,6 +107,7 @@ data class FilterProfile(
     @SerialName("land_categories") val landCategories: List<String> = emptyList(),
     /** 농지(전·답·과수원) 제외. 농취증을 못 받으면 보증금을 잃는다. */
     @SerialName("exclude_farmland") val excludeFarmland: Boolean = false,
+    @SerialName("exclude_share_sale") val excludeShareSale: Boolean = false,
     /** 지금 입찰할 수 있는 물건만. */
     @SerialName("biddable_only") val biddableOnly: Boolean = false,
     @SerialName("min_discount_ratio") val minDiscountRatio: Double? = null,
