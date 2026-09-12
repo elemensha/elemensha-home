@@ -63,6 +63,7 @@ fun ListingsScreen(
     onAddCourtListing: (ManualCourtListing) -> Unit,
     onToggleFavorite: (Listing) -> Unit,
     onToggleFavoritesOnly: (Boolean) -> Unit,
+    onToggleRecent: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     var showCourtEntry by remember { mutableStateOf(false) }
@@ -94,7 +95,8 @@ fun ListingsScreen(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        (if (state.favoritesOnly) "관심 물건"
+                        (if (state.recentOnly) "최근 본 물건"
+                         else if (state.favoritesOnly) "관심 물건"
                          else if (state.applyFilters) "조건 적용됨" else "조건 없이 전체") +
                             " · 마감된 물건 숨김",
                         style = MaterialTheme.typography.bodySmall,
@@ -134,6 +136,11 @@ fun ListingsScreen(
                     selected = state.favoritesOnly,
                     onClick = { onToggleFavoritesOnly(!state.favoritesOnly) },
                     label = { Text("★ 관심") },
+                )
+                FilterChip(
+                    selected = state.recentOnly,
+                    onClick = { onToggleRecent(!state.recentOnly) },
+                    label = { Text("최근 본") },
                 )
                 FilterChip(
                     selected = state.biddableOnly,
@@ -498,6 +505,30 @@ private fun DetailBlock(detail: ListingDetail) {
         Text("확인할 것", style = MaterialTheme.typography.titleSmall, color = WarningAmber)
         detail.riskFlags.forEach {
             Text("· $it", style = MaterialTheme.typography.bodySmall, color = WarningAmber)
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+
+    // 값이 어떻게 내려왔는지. 유찰로 떨어지는 것이 공매의 핵심 동학인데
+    // 현재 값만 보면 '싼 이유'가 안 보인다. 두 점 이상일 때만 뜻이 있다.
+    if (detail.priceHistory.size >= 2) {
+        Text("가격 변동", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(4.dp))
+        detail.priceHistory.forEach { pt ->
+            Text(
+                pt.at.take(10) + "  " + formatKrw(pt.price),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        val first = detail.priceHistory.first().price
+        val last = detail.priceHistory.last().price
+        if (first != null && last != null && first > 0 && last < first) {
+            Text(
+                "처음 본 값보다 " + formatKrw(first - last) + " 내렸다 " +
+                    "(" + Math.round((1 - last.toDouble() / first) * 100) + "%)",
+                style = MaterialTheme.typography.bodySmall,
+                color = VerifiedGreen,
+            )
         }
         Spacer(Modifier.height(8.dp))
     }

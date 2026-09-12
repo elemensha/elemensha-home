@@ -78,6 +78,25 @@ class Prefs(context: Context) {
         get() = prefs.getInt(KEY_NOTIFY_HOUR, 7)
         set(value) = prefs.edit().putInt(KEY_NOTIFY_HOUR, value.coerceIn(0, 23)).apply()
 
+    /**
+     * 최근 본 물건 키. 최신이 앞이고 20개까지 둔다.
+     *
+     * 서버에 둘 이유가 없다. 기기 하나에서 보는 기록이고, 서버에 두면
+     * 물건을 열 때마다 왕복이 하나 늘어난다.
+     */
+    var recentKeys: List<String>
+        get() = prefs.getString(KEY_RECENT, "")
+            ?.split('')?.filter { it.isNotBlank() } ?: emptyList()
+        set(value) = prefs.edit()
+            // 물건 키에 콜론·하이픈이 들어가므로 그것들과 안 겹치는
+            // 제어문자를 구분자로 쓴다.
+            .putString(KEY_RECENT, value.take(20).joinToString("")).apply()
+
+    fun pushRecent(key: String) {
+        if (key.isBlank()) return
+        recentKeys = listOf(key) + recentKeys.filterNot { it == key }
+    }
+
     /** 알림 기준선을 잡았는지. 한 번만 하면 된다. */
     var notificationBaselineDone: Boolean
         get() = prefs.getBoolean(KEY_BASELINE, false)
@@ -96,6 +115,7 @@ class Prefs(context: Context) {
         const val KEY_NOTIFY = "notifications_enabled"
         const val KEY_BASELINE = "notification_baseline_done"
         const val KEY_NOTIFY_HOUR = "notify_hour"
+        const val KEY_RECENT = "recent_keys"
         // 무한정 쌓이면 SharedPreferences가 비대해진다.
         const val MAX_NOTIFIED_KEYS = 500
     }

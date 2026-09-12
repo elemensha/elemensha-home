@@ -47,6 +47,14 @@ private val TYPES = listOf(
 
 private const val SQM_PER_PYEONG = 3.305785
 
+/** 원 -> 만원 입력값. 0 이나 기본 상한은 비워 둔다(안 고른 값이므로). */
+private fun manwonText(krw: Long): String =
+    if (krw <= 0 || krw >= 2_000_000_000) "" else (krw / 10_000).toString()
+
+/** ㎡ -> 평 입력값. 없거나 0 이면 비운다. */
+private fun pyeongText(sqm: Double?): String =
+    if (sqm == null || sqm <= 0) "" else Math.round(sqm / SQM_PER_PYEONG).toString()
+
 /** 평 입력을 ㎡ 로. 비었으면 null 이라 호출부가 기본값을 정한다. */
 private fun pyeongToSqm(text: String): Double? =
     text.trim().toDoubleOrNull()?.takeIf { it > 0 }?.times(SQM_PER_PYEONG)
@@ -73,7 +81,7 @@ fun FiltersScreen(
         item { Spacer(Modifier.height(8.dp)) }
 
         item {
-            SectionCard("새 조건") {
+            SectionCard(if (draft.id != null) "조건 수정" else "새 조건") {
                 OutlinedTextField(
                     value = draft.name,
                     onValueChange = { draft = draft.copy(name = it) },
@@ -260,6 +268,7 @@ fun FiltersScreen(
                 )
 
                 Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
                         onSave(
@@ -273,12 +282,28 @@ fun FiltersScreen(
                             )
                         )
                         draft = FilterProfile(sido = emptyList())
+                        minText = ""
+                        maxText = "50000"
                         minPyeong = ""
                         maxPyeong = ""
                     },
                     enabled = !state.loading && state.isConfigured,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("조건 추가") }
+                    modifier = Modifier.weight(1f),
+                ) { Text(if (draft.id != null) "수정 저장" else "조건 추가") }
+
+                    // 수정 중일 때만. 잘못 눌러 들어왔을 때 빠져나갈 길이 필요하다.
+                    if (draft.id != null) {
+                        OutlinedButton(
+                            onClick = {
+                                draft = FilterProfile(sido = emptyList())
+                                minText = ""
+                                maxText = "50000"
+                                minPyeong = ""
+                                maxPyeong = ""
+                            },
+                        ) { Text("취소") }
+                    }
+                }
             }
         }
 
@@ -297,8 +322,19 @@ fun FiltersScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(filter.name, style = MaterialTheme.typography.titleSmall)
-                        filter.id?.let { id ->
-                            OutlinedButton(onClick = { onDelete(id) }) { Text("삭제") }
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // 지금까지는 고치려면 지우고 새로 만들어야 했다.
+                            // 조건 번호가 계속 올라간 이유가 그것이다.
+                            OutlinedButton(onClick = {
+                                draft = filter
+                                minText = manwonText(filter.minPriceKrw)
+                                maxText = manwonText(filter.maxPriceKrw)
+                                minPyeong = pyeongText(filter.minAreaSqm)
+                                maxPyeong = pyeongText(filter.maxAreaSqm)
+                            }) { Text("수정") }
+                            filter.id?.let { id ->
+                                OutlinedButton(onClick = { onDelete(id) }) { Text("삭제") }
+                            }
                         }
                     }
                     Text(

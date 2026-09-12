@@ -291,6 +291,8 @@ data class ListingDetail(
     @SerialName("sale_kind") val saleKind: SaleKind? = null,
     /** 보증금을 떠안는지. 값을 매길 때 가장 크게 틀리는 지점이다. */
     val tenancy: TenancyAnalysis? = null,
+    /** 가격 변동 이력. 유찰로 내려간 자취가 남는다. */
+    @SerialName("price_history") val priceHistory: List<PricePoint> = emptyList(),
     val rights: List<Map<String, String>> = emptyList(),
     val photos: List<String> = emptyList(),
     @SerialName("location_map") val locationMap: String = "",
@@ -434,4 +436,10 @@ data class TenantEntry(
     /** senior = 기준선보다 빠름(인수), junior = 이후(소멸), unknown */
     val status: String = "",
     val verdict: String = "",
+)
+
+@Serializable
+data class PricePoint(
+    val price: Long? = null,
+    val at: String = "",
 )

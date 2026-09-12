@@ -132,6 +132,7 @@ private fun AppScaffold(viewModel: AppViewModel) {
                     onAddCourtListing = viewModel::addManualListing,
                     onToggleFavorite = viewModel::toggleFavorite,
                     onToggleFavoritesOnly = viewModel::setFavoritesOnly,
+                    onToggleRecent = viewModel::setRecentOnly,
                 )
                 Tab.MAP -> MapScreen(state = state)
                 Tab.PLAN -> PlanScreen(

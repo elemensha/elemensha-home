@@ -47,6 +47,8 @@ data class UiState(
     val favoritesOnly: Boolean = false,
     /** 마지막 수집 시각. 언제 자료인지 화면에 밝힌다. */
     val lastCollectedAt: String? = null,
+    /** 최근 본 물건만 보기. */
+    val recentOnly: Boolean = false,
     val borrower: BorrowerProfile = BorrowerProfile(),
     val plan: PlanResponse? = null,
     /** 지금 펼쳐 놓은 물건의 상세. null 이면 아직 안 열었다. */
@@ -188,6 +190,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+    }
+
+    /** 최근 본 물건 보기. 기기에 남은 기록이라 서버를 부르지 않는다. */
+    fun setRecentOnly(on: Boolean) {
+        _state.update { it.copy(recentOnly = on) }
+        if (on) showRecent() else reloadListings()
+    }
+
+    private fun showRecent() = launchGuarded {
+        val keys = prefs.recentKeys
+        if (keys.isEmpty()) {
+            _state.update { it.copy(listings = emptyList(), totalMatched = 0) }
+            return@launchGuarded
+        }
+        // 최근 본 것은 조건 밖일 수 있으므로 조건 없이 받아서 골라낸다.
+        val all = api.listings(limit = 500, applyFilters = false).items
+        val byKey = all.associateBy { it.dedupeKey ?: (it.source + ":" + it.sourceId) }
+        val picked = keys.mapNotNull { byKey[it] }
+        _state.update { it.copy(listings = picked, totalMatched = picked.size) }
     }
 
     fun setFavoritesOnly(on: Boolean) {
@@ -401,6 +422,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---------------------------------------------------------- 물건 상세
 
     fun openDetail(listing: Listing) {
+        // 상세를 연 것이 '봤다'의 기준이다. 목록을 스크롤만 한 것은 아니다.
+        prefs.pushRecent(listing.dedupeKey ?: (listing.source + ":" + listing.sourceId))
         val key = listing.dedupeKey ?: (listing.source + ":" + listing.sourceId)
         if (_state.value.detailKey == key) {
             // 같은 카드를 다시 누르면 접는다.

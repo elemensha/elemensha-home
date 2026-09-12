@@ -39,8 +39,8 @@ from .store import Store
 STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 # 앱과 서버가 같은 버전 체계를 쓴다. 릴리스를 못 읽을 때의 바닥값이다.
-APP_VERSION = "0.15.0"
-APP_VERSION_CODE = 1500
+APP_VERSION = "0.16.0"
+APP_VERSION_CODE = 1600
 
 # 조건 매칭 시 훑어볼 최근 물건 수. 전부 객체로 만들어 비교해야 해서
 # 무제한으로 두면 작은 VM 의 메모리를 밀어낸다.
@@ -99,10 +99,14 @@ def biddable_row(row: dict, now_str: str | None = None) -> bool:
 
 
 def _slim(row: dict) -> dict:
-    raw = row.get("raw")
-    if not isinstance(raw, dict):
-        return row
-    return {**row, "raw": {k: v for k, v in raw.items() if k in LIST_RAW_KEYS}}
+    # 키를 명시해 보낸다. source_id 에 '|' 와 ':' 가 섞여 있어 클라이언트가
+    # 조립하면 어긋날 여지가 있다.
+    out = {**row, "dedupe_key": row.get("dedupe_key")
+           or f"{row.get('source')}:{row.get('source_id')}"}
+    raw = out.get("raw")
+    if isinstance(raw, dict):
+        out["raw"] = {k: v for k, v in raw.items() if k in LIST_RAW_KEYS}
+    return out
 
 # 한 번에 넘길 알림 최대 건수. 앱이 하루 한 번 가져가므로 하루치가
 # 한꺼번에 온다. 개별 알림이 아니라 요약으로 묶이니 많아도 괜찮다.
@@ -942,6 +946,9 @@ async def listing_detail(
         # 보증금 인수 여부는 값을 매길 때 가장 크게 틀리는 지점이라
         # 맨 앞에 둔다.
         detail["tenancy"] = tenancy.analyze(detail)
+        # 유찰로 값이 내려가는 것이 공매의 핵심인데 현재 값만 보였다.
+        # 2026-09-12 부터 쌓기 시작해서, 그 전 변동은 남아 있지 않다.
+        detail["price_history"] = store.price_history(dedupe_key)
         detail["sale_kind"] = checklist.sale_kind(listing, detail)
         detail["checklist"] = checklist.build(listing, detail)
         detail["glossary"] = glossary.explain(
