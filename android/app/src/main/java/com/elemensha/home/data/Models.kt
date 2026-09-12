@@ -27,6 +27,8 @@ data class Listing(
     val address: String = "",
     @SerialName("property_type") val propertyType: String = "",
     @SerialName("exclusive_area_sqm") val exclusiveAreaSqm: Double? = null,
+    /** 관심 물건으로 담아 뒀는지. 1.9만 건에서 놓치면 다시 못 찾는다. */
+    val favorite: Boolean = false,
     @SerialName("appraised_price_krw") val appraisedPriceKrw: Long? = null,
     @SerialName("min_bid_price_krw") val minBidPriceKrw: Long? = null,
     @SerialName("asking_price_krw") val askingPriceKrw: Long? = null,
@@ -79,6 +81,8 @@ data class ListingsResponse(
     val items: List<Listing> = emptyList(),
     /** 조건을 통과한 전체 건수. 화면에 몇 건 중 몇 건인지 보여준다. */
     @SerialName("total_matched") val totalMatched: Int = 0,
+    /** 마지막 수집 시각. 언제 자료인지 밝히지 않으면 지금 값으로 읽는다. */
+    @SerialName("last_collected_at") val lastCollectedAt: String? = null,
     @SerialName("filters_applied") val filtersApplied: List<String> = emptyList(),
 )
 

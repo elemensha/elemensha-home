@@ -43,6 +43,10 @@ data class UiState(
     val sort: String = "recent",
     /** 지금 입찰할 수 있는 물건만 볼지. */
     val biddableOnly: Boolean = false,
+    /** 관심 물건만 보기. */
+    val favoritesOnly: Boolean = false,
+    /** 마지막 수집 시각. 언제 자료인지 화면에 밝힌다. */
+    val lastCollectedAt: String? = null,
     val borrower: BorrowerProfile = BorrowerProfile(),
     val plan: PlanResponse? = null,
     /** 지금 펼쳐 놓은 물건의 상세. null 이면 아직 안 열었다. */
@@ -151,10 +155,44 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             applyFilters = current.applyFilters,
             sort = current.sort,
             biddableOnly = current.biddableOnly,
+            favoritesOnly = current.favoritesOnly,
         )
         _state.update {
-            it.copy(listings = response.items, totalMatched = response.totalMatched)
+            it.copy(listings = response.items, totalMatched = response.totalMatched,
+                    lastCollectedAt = response.lastCollectedAt)
         }
+    }
+
+    /** 관심 물건 담기·빼기. 화면은 바로 바꾸고 서버에 따라 보낸다. */
+    fun toggleFavorite(listing: Listing) {
+        val key = listing.dedupeKey ?: (listing.source + ":" + listing.sourceId)
+        val on = !listing.favorite
+        // 먼저 화면을 바꾼다. 별을 눌렀는데 한 박자 늦게 켜지면 안 눌린 줄 안다.
+        _state.update { st ->
+            st.copy(listings = st.listings.map {
+                if ((it.dedupeKey ?: (it.source + ":" + it.sourceId)) == key)
+                    it.copy(favorite = on) else it
+            })
+        }
+        viewModelScope.launch {
+            runCatching { api.setFavorite(key, on) }.onFailure { e ->
+                // 실패하면 화면을 되돌린다. 담긴 줄 알고 넘어가면 잃어버린다.
+                _state.update { st ->
+                    st.copy(
+                        listings = st.listings.map {
+                            if ((it.dedupeKey ?: (it.source + ":" + it.sourceId)) == key)
+                                it.copy(favorite = !on) else it
+                        },
+                        error = "관심 물건 저장 실패: " + (e.message ?: ""),
+                    )
+                }
+            }
+        }
+    }
+
+    fun setFavoritesOnly(on: Boolean) {
+        _state.update { it.copy(favoritesOnly = on, applyFilters = !on || it.applyFilters) }
+        reloadListings()
     }
 
     fun setBiddableOnly(on: Boolean) {

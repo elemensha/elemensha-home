@@ -61,6 +61,8 @@ fun ListingsScreen(
     onOpenDetail: (Listing) -> Unit,
     onToggleBiddable: (Boolean) -> Unit,
     onAddCourtListing: (ManualCourtListing) -> Unit,
+    onToggleFavorite: (Listing) -> Unit,
+    onToggleFavoritesOnly: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     var showCourtEntry by remember { mutableStateOf(false) }
@@ -92,11 +94,20 @@ fun ListingsScreen(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        (if (state.applyFilters) "조건 적용됨" else "조건 없이 전체") +
+                        (if (state.favoritesOnly) "관심 물건"
+                         else if (state.applyFilters) "조건 적용됨" else "조건 없이 전체") +
                             " · 마감된 물건 숨김",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    // 언제 자료인지 밝히지 않으면 오래된 값을 지금 값으로 읽는다.
+                    state.lastCollectedAt?.let {
+                        Text(
+                            "갱신 " + it.take(16).replace('T', ' '),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     // 법원경매는 자동 수집이 막혀 있어 손으로 넣는다.
@@ -118,6 +129,11 @@ fun ListingsScreen(
                     selected = !state.applyFilters,
                     onClick = onShowAll,
                     label = { Text("전체") },
+                )
+                FilterChip(
+                    selected = state.favoritesOnly,
+                    onClick = { onToggleFavoritesOnly(!state.favoritesOnly) },
+                    label = { Text("★ 관심") },
                 )
                 FilterChip(
                     selected = state.biddableOnly,
@@ -177,6 +193,7 @@ fun ListingsScreen(
                 ) state.detail else null,
                 detailLoading = state.detailLoading && state.detailKey ==
                     (listing.dedupeKey ?: (listing.source + ":" + listing.sourceId)),
+                onFavorite = { onToggleFavorite(listing) },
             )
         }
 
@@ -237,6 +254,7 @@ private fun ListingCard(
     onDetail: () -> Unit,
     detail: ListingDetail?,
     detailLoading: Boolean,
+    onFavorite: () -> Unit,
 ) {
     val context = LocalContext.current
     Card(
@@ -249,7 +267,17 @@ private fun ListingCard(
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                // 별은 카드를 여는 것과 구분돼야 한다. 카드 전체가 눌리므로
+                // 별에는 자기 클릭을 따로 건다.
+                Text(
+                    if (listing.favorite) "★" else "☆",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (listing.favorite) WarningAmber
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.clickable(onClick = onFavorite).padding(end = 2.dp),
+                )
                 AssistChip(onClick = {}, label = { Text(sourceLabel(listing.source)) })
                 if (listing.source == "onbid") {
                     AssistChip(

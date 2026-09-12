@@ -51,6 +51,7 @@ def to_markers(items: list[dict]) -> list[dict]:
             # 온비드는 물건 하나를 바로 여는 주소가 없다. 목록을 열고
             # 이 번호로 검색해야 하므로 번호를 같이 실어 보낸다.
             "n": _mgmt_no(it),
+            "fv": bool(it.get("favorite")),
         })
     return markers
 
@@ -63,6 +64,7 @@ def render(
     filters_applied: list[str],
     no_coord_count: int,
     api_token: str = "",
+    last_collected_at: str = "",
 ) -> str:
     if not map_key:
         return _notice(
@@ -82,6 +84,11 @@ def render(
 
     payload = json.dumps(markers, ensure_ascii=False, separators=(",", ":"))
     token_js = json.dumps(api_token or "")
+    # 언제 자료인지 밝히지 않으면 오래된 값을 지금 값으로 읽는다.
+    collected = (
+        f'<span class="upd">갱신 {html.escape(last_collected_at[5:16].replace("T", " "))}</span>'
+        if last_collected_at else ""
+    )
     applied = html.escape(", ".join(filters_applied)) if filters_applied else "전체"
     missing = (
         f'<span class="warn">좌표 없음 {no_coord_count}건 제외</span>'
@@ -108,6 +115,11 @@ def render(
   #bar input[type=number] {{ width:60px; padding:4px 6px; border:1px solid #ccc;
          border-radius:6px; font-size:13px; }}
   #count {{ font-weight:600; }}
+  .upd {{ color:#888; }}
+  #bar button {{ margin-left:auto; background:#eef1f5; border:0; border-radius:6px;
+         padding:3px 9px; font-size:12px; cursor:pointer; font-family:inherit; color:#333; }}
+  #more button {{ margin-left:0; }}
+  #more.hide {{ display:none; }}
   .warn {{ color:#b26a00; }}
   label {{ display:flex; align-items:center; gap:4px; }}
   /* 점 하나로는 지도 위에서 안 보인다. 평수를 적은 알약으로 만들어
@@ -131,6 +143,7 @@ def render(
   .iw button {{ background:#1a73e8; color:#fff; border:0; border-radius:6px;
          padding:5px 10px; font-size:12px; cursor:pointer; font-family:inherit; }}
   .iw button.copy {{ background:#5f6368; }}
+  .iw button.fav {{ background:#b26a00; }}
   .iw .risk {{ color:#b00020; font-size:12px; margin-top:6px; word-break:keep-all; }}
   .iw .sub {{ color:#555; font-size:12px; margin-top:5px; word-break:keep-all; }}
   .iw .muted {{ color:#888; font-size:12px; margin-top:6px; }}
@@ -171,15 +184,30 @@ def render(
 <div id="bar">
   <div class="row">
     <span id="count"></span>
-    <span style="color:#888">· 조건: {applied}</span>
+    <span style="color:#888">· {applied}</span>
+    {collected}
     {missing}
     {capped}
+    <button id="fold" type="button">접기</button>
   </div>
-  <div class="row" style="margin-top:6px">
-    <label>면적 <input type="number" id="amin" placeholder="최소" min="0"> ~
-      <input type="number" id="amax" placeholder="최대" min="0"> 평</label>
-    <label><input type="checkbox" id="live"> 입찰 가능만</label>
-    <label><input type="checkbox" id="cad"> 지적편집도</label>
+  <div id="more">
+    <div class="row" style="margin-top:6px">
+      <label>가격 <input type="number" id="pmin" placeholder="최소" min="0"> ~
+        <input type="number" id="pmax" placeholder="최대" min="0"> 만원</label>
+    </div>
+    <div class="row" style="margin-top:5px">
+      <label>면적 <input type="number" id="amin" placeholder="최소" min="0"> ~
+        <input type="number" id="amax" placeholder="최대" min="0"> 평</label>
+    </div>
+    <div class="row" style="margin-top:5px">
+      <label>마감 <input type="number" id="dday" placeholder="일" min="0" style="width:52px"> 일 이내</label>
+      <label><input type="checkbox" id="live"> 입찰 가능만</label>
+    </div>
+    <div class="row" style="margin-top:5px">
+      <label><input type="checkbox" id="fav"> 관심만</label>
+      <label><input type="checkbox" id="cad"> 지적편집도</label>
+      <button id="reset" type="button">조건 지우기</button>
+    </div>
   </div>
 </div>
 <div id="map"></div>
@@ -237,6 +265,8 @@ function body(d, extra) {{
     +   (extra === undefined
           ? '<button class="more" data-k="' + esc(d.k) + '">상세 보기</button>'
           : '')
+    +   '<button class="fav" data-k="' + esc(d.k) + '">'
+    +     (d.fv ? '★ 관심 해제' : '☆ 관심') + '</button>'
     +   (d.n ? '<button class="copy" data-n="' + esc(d.n) + '">번호 복사</button>' : '')
     +   (d.u ? '<a href="' + esc(d.u) + '" target="_blank" rel="noopener">온비드 →</a>' : '')
     +   '<a href="https://map.naver.com/p/search/' + encodeURIComponent(d.a)
@@ -263,6 +293,28 @@ function openInfo(d, extra) {{
     btn.addEventListener('click', ev => {{
       ev.stopPropagation();
       loadDetail(btn.getAttribute('data-k'));
+    }});
+  }}
+  const fb = document.querySelector('button.fav');
+  if (fb) {{
+    fb.addEventListener('click', async ev => {{
+      ev.stopPropagation();
+      const key = fb.getAttribute('data-k');
+      const item = DATA.find(x => x.k === key);
+      const on = !(item && item.fv);
+      try {{
+        const r = await fetch('api/favorites/' + encodeURIComponent(key), {{
+          method: on ? 'POST' : 'DELETE',
+          headers: TOKEN ? {{ Authorization: 'Bearer ' + TOKEN }} : {{}},
+        }});
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (item) item.fv = on;
+        fb.textContent = on ? '★ 관심 해제' : '☆ 관심';
+        // '관심만' 이 켜져 있으면 해제한 물건이 바로 사라져야 한다.
+        if (document.getElementById('fav').checked) draw();
+      }} catch (e) {{
+        fb.textContent = '실패';
+      }}
     }});
   }}
   const cp = document.querySelector('button.copy');
@@ -427,12 +479,36 @@ function cluster(items, lat, lon) {{
   return m;
 }}
 
+const today = new Date().toISOString().slice(0, 10);
+
+function daysLeft(ymd) {{
+  if (!ymd) return null;
+  return Math.round((Date.parse(ymd) - Date.parse(today)) / 86400000);
+}}
+
 function visible() {{
   const lo = parseFloat(document.getElementById('amin').value);
   const hi = parseFloat(document.getElementById('amax').value);
+  // 가격은 만원 단위로 받는다. 원 단위로 받으면 0 을 몇 개 쳐야 하는지
+  // 매번 세게 된다.
+  const plo = parseFloat(document.getElementById('pmin').value) * 10000;
+  const phi = parseFloat(document.getElementById('pmax').value) * 10000;
+  const dd = parseFloat(document.getElementById('dday').value);
   const liveOnly = document.getElementById('live').checked;
+  const favOnly = document.getElementById('fav').checked;
   return DATA.filter(d => {{
     if (liveOnly && !d.b) return false;
+    if (favOnly && !d.fv) return false;
+    if (!isNaN(plo) || !isNaN(phi)) {{
+      if (d.m == null) return false;
+      if (!isNaN(plo) && d.m < plo) return false;
+      if (!isNaN(phi) && d.m > phi) return false;
+    }}
+    if (!isNaN(dd)) {{
+      const left = daysLeft(d.d);
+      // 마감일이 없으면 '언제 끝나는지 모름'이라 기간 조건에서 뺀다.
+      if (left === null || left < 0 || left > dd) return false;
+    }}
     if (!isNaN(lo) || !isNaN(hi)) {{
       if (d.s == null) return false;      // 면적을 걸었으면 면적 모르는 건 뺀다
       const py = d.s / PY;
@@ -478,9 +554,24 @@ function draw() {{
 }}
 
 naver.maps.Event.addListener(map, 'idle', draw);
-['amin', 'amax'].forEach(id =>
+['amin', 'amax', 'pmin', 'pmax', 'dday'].forEach(id =>
   document.getElementById(id).addEventListener('input', draw));
-document.getElementById('live').addEventListener('change', draw);
+['live', 'fav'].forEach(id =>
+  document.getElementById(id).addEventListener('change', draw));
+
+// 헤더가 세로 화면의 5분의 1을 덮는다. 지도를 볼 때는 접어 둔다.
+const more = document.getElementById('more'), fold = document.getElementById('fold');
+fold.addEventListener('click', () => {{
+  more.classList.toggle('hide');
+  fold.textContent = more.classList.contains('hide') ? '조건' : '접기';
+}});
+
+document.getElementById('reset').addEventListener('click', () => {{
+  ['amin', 'amax', 'pmin', 'pmax', 'dday'].forEach(
+    id => document.getElementById(id).value = '');
+  ['live', 'fav'].forEach(id => document.getElementById(id).checked = false);
+  draw();
+}});
 draw();
 </script></body></html>"""
 

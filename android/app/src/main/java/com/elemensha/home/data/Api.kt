@@ -93,12 +93,14 @@ class Api(
         applyFilters: Boolean = true,
         sort: String = "recent",
         biddableOnly: Boolean = false,
+        favoritesOnly: Boolean = false,
     ): ListingsResponse {
         val query = buildString {
             append("/api/listings?limit=").append(limit)
             append("&apply_filters=").append(applyFilters)
             append("&sort=").append(sort)
             if (biddableOnly) append("&biddable_only=true")
+            if (favoritesOnly) append("&favorites_only=true")
             if (source != null) append("&source=").append(source)
             if (filterId != null) append("&filter_id=").append(filterId)
         }
@@ -119,6 +121,13 @@ class Api(
 
     /** 실제로 수집된 지역. 앱이 시도 목록을 하드코딩하지 않게 한다. */
     suspend fun regions(): RegionsResponse = get("/api/regions")
+
+    suspend fun setFavorite(dedupeKey: String, on: Boolean) {
+        val path = "/api/favorites/" + java.net.URLEncoder.encode(dedupeKey, "UTF-8")
+        val req = buildRequest(path)
+        execute(if (on) req.post(ByteArray(0).toRequestBody(jsonMedia)).build()
+                else req.delete().build())
+    }
 
     suspend fun filters(): List<FilterProfile> =
         get<FiltersResponse>("/api/filters").items

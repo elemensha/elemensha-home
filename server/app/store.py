@@ -25,12 +25,17 @@ CREATE TABLE IF NOT EXISTS listings (
     effective_price INTEGER,
     first_seen_at   TEXT NOT NULL,
     last_seen_at    TEXT NOT NULL,
-    notified_at     TEXT
+    notified_at     TEXT,
+    deadline        TEXT,
+    property_type   TEXT,
+    sido            TEXT,
+    area_sqm        REAL
 );
 CREATE INDEX IF NOT EXISTS idx_listings_source ON listings(source);
 CREATE INDEX IF NOT EXISTS idx_listings_seen ON listings(first_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_listings_notified ON listings(notified_at);
 CREATE INDEX IF NOT EXISTS idx_listings_price ON listings(effective_price);
+
 
 CREATE TABLE IF NOT EXISTS filters (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,6 +63,22 @@ CREATE TABLE IF NOT EXISTS geocode (
     tried_at    TEXT NOT NULL
 );
 
+-- 관심 물건. 1.9만 건에서 한 번 놓치면 다시 찾을 방법이 없었다.
+CREATE TABLE IF NOT EXISTS favorites (
+    dedupe_key TEXT PRIMARY KEY,
+    added_at   TEXT NOT NULL,
+    memo       TEXT NOT NULL DEFAULT ''
+);
+
+-- 가격 이력. 유찰로 값이 내려가는 것이 공매의 핵심인데 현재 값만 보였다.
+-- 지금부터 쌓아야 나중에 '3회 유찰, 감정가의 51%'를 보여줄 수 있다.
+CREATE TABLE IF NOT EXISTS price_history (
+    dedupe_key TEXT NOT NULL,
+    price      INTEGER,
+    seen_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_price_history_key ON price_history(dedupe_key);
+
 CREATE TABLE IF NOT EXISTS poll_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     source     TEXT NOT NULL,
@@ -75,11 +96,39 @@ def _now() -> str:
 
 
 class Store:
+    COLUMNS = (
+        ("deadline", "TEXT", "$.deadline"),
+        ("property_type", "TEXT", "$.property_type"),
+        ("sido", "TEXT", "$.sido"),
+        ("area_sqm", "REAL", "$.exclusive_area_sqm"),
+        ("land_category", "TEXT", "$.raw.usage_minor"),
+        ("farmland", "INTEGER", "$.raw.needs_farmland_permit"),
+        ("manual", "INTEGER", "$.raw.manual"),
+    )
+
+    def _ensure_columns(self, conn) -> None:
+        """이미 있는 DB 에 컬럼을 붙이고 한 번 채운다."""
+        have = {r["name"] for r in conn.execute("PRAGMA table_info(listings)")}
+        added = [c for c in self.COLUMNS if c[0] not in have]
+        for name, kind, _ in added:
+            conn.execute(f"ALTER TABLE listings ADD COLUMN {name} {kind}")
+        if added:
+            sets = ", ".join(f"{n} = json_extract(payload, '{path}')"
+                             for n, _, path in added)
+            conn.execute(f"UPDATE listings SET {sets}")
+        # 인덱스는 컬럼이 생긴 뒤에 만든다. SCHEMA 에 두면 옛 DB 에서
+        # 컬럼보다 먼저 실행돼 'no such column' 으로 죽는다.
+        for name in ("deadline", "property_type", "sido", "manual"):
+            conn.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_listings_{name} ON listings({name})"
+            )
+
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(SCHEMA)
+            self._ensure_columns(conn)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=15)
@@ -107,9 +156,20 @@ class Store:
             if row is None:
                 conn.execute(
                     "INSERT INTO listings"
-                    " (dedupe_key, source, payload, effective_price, first_seen_at, last_seen_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?)",
-                    (listing.dedupe_key, listing.source.value, payload, price, now, now),
+                    " (dedupe_key, source, payload, effective_price, first_seen_at,"
+                    "  last_seen_at, deadline, property_type, sido, area_sqm,"
+                    "  land_category, farmland, manual)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (listing.dedupe_key, listing.source.value, payload, price, now, now,
+                     listing.deadline, listing.property_type.value, listing.sido,
+                     listing.exclusive_area_sqm,
+                     str(listing.raw.get("usage_minor") or ""),
+                     1 if listing.raw.get("needs_farmland_permit") else 0,
+                     1 if listing.raw.get("manual") else 0),
+                )
+                conn.execute(
+                    "INSERT INTO price_history(dedupe_key, price, seen_at) VALUES(?,?,?)",
+                    (listing.dedupe_key, price, now),
                 )
                 return True
 
@@ -118,11 +178,24 @@ class Store:
                 and row["effective_price"] is not None
                 and price < row["effective_price"]
             )
+            # 값이 달라졌을 때만 한 줄 남긴다. 매일 같은 값을 쌓으면
+            # 이력이 아니라 로그가 된다.
+            if price != row["effective_price"]:
+                conn.execute(
+                    "INSERT INTO price_history(dedupe_key, price, seen_at) VALUES(?,?,?)",
+                    (listing.dedupe_key, price, now),
+                )
             conn.execute(
-                "UPDATE listings SET payload = ?, effective_price = ?, last_seen_at = ?"
+                "UPDATE listings SET payload = ?, effective_price = ?, last_seen_at = ?,"
+                " deadline = ?, property_type = ?, sido = ?, area_sqm = ?,"
+                " land_category = ?, farmland = ?, manual = ?"
                 + (", notified_at = NULL" if price_dropped else "")
                 + " WHERE dedupe_key = ?",
-                (payload, price, now, listing.dedupe_key),
+                (payload, price, now, listing.deadline, listing.property_type.value,
+                 listing.sido, listing.exclusive_area_sqm,
+                 str(listing.raw.get("usage_minor") or ""),
+                 1 if listing.raw.get("needs_farmland_permit") else 0,
+                 1 if listing.raw.get("manual") else 0, listing.dedupe_key),
             )
             return price_dropped
 
@@ -146,21 +219,24 @@ class Store:
                 [(now, key) for key in dedupe_keys],
             )
 
-    def listings(
+    def _where(
         self,
         source: str | None = None,
-        limit: int = 100,
-        offset: int = 0,
         sources: list[str] | None = None,
         min_price: int | None = None,
         max_price: int | None = None,
         not_expired_at: str | None = None,
-    ) -> list[dict]:
-        """물건 목록.
+        property_types: list[str] | None = None,
+        sido: list[str] | None = None,
+        min_area: float | None = None,
+        max_area: float | None = None,
+        land_categories: list[str] | None = None,
+        exclude_farmland: bool = False,
+    ) -> tuple[str, list]:
+        """조건을 SQL WHERE 절로 조립한다.
 
-        가격·소스는 SQL 에서 먼저 거른다. 수집 범위를 넓히면서 1.5만 건이
-        됐는데, 전부 파이썬으로 올려 json 을 풀어 비교하면 작은 VM 에서
-        요청마다 몇 초가 걸린다. 인덱스가 있는 컬럼으로 먼저 줄인다.
+        읽기(listings)와 세기(count_matching)가 같은 조건을 써야 화면의
+        총계와 목록이 어긋나지 않는다.
         """
         clauses: list[str] = []
         params: list = []
@@ -170,29 +246,59 @@ class Store:
         elif sources:
             clauses.append(f"source IN ({','.join('?' * len(sources))})")
             params += sources
+        # 가격 조건이 걸리면 값이 없는 물건은 탈락이다. matches() 가 그렇게
+        # 판정하는데 SQL 만 통과시키면, 파이썬까지 올렸다가 버리는 행이 생긴다.
+        if min_price is not None or max_price is not None:
+            clauses.append("effective_price IS NOT NULL")
         if min_price is not None:
-            clauses.append("(effective_price IS NULL OR effective_price >= ?)")
+            clauses.append("effective_price >= ?")
             params.append(min_price)
         if max_price is not None:
-            clauses.append("(effective_price IS NULL OR effective_price <= ?)")
+            clauses.append("effective_price <= ?")
             params.append(max_price)
+        if min_area is not None:
+            clauses.append("(area_sqm IS NULL OR area_sqm >= ?)")
+            params.append(min_area)
+        if max_area is not None:
+            clauses.append("(area_sqm IS NULL OR area_sqm <= ?)")
+            params.append(max_area)
         if not_expired_at is not None:
-            # 마감 판정도 SQL 에서 한다. 파이썬으로 올려 세면 스캔 한도에
+            # 마감 판정은 SQL 에서 한다. 파이썬으로 올려 세면 스캔 한도에
             # 걸려 '유효 6000건' 같은 잘린 숫자가 총계로 나간다.
-            clauses.append(
-                "(json_extract(payload,'$.deadline') IS NULL"
-                " OR substr(json_extract(payload,'$.deadline'),1,16) >= ?)"
-            )
+            clauses.append("(deadline IS NULL OR substr(deadline,1,16) >= ?)")
             params.append(not_expired_at)
+        if property_types:
+            clauses.append(f"property_type IN ({','.join('?' * len(property_types))})")
+            params += list(property_types)
+        if sido:
+            # 지역은 비어 있을 수 있어(수집이 못 채운 것) NULL 도 통과시킨다.
+            clauses.append(
+                f"(sido IS NULL OR sido = '' OR sido IN ({','.join('?' * len(sido))}))"
+            )
+            params += list(sido)
+        # 지목·농지는 토지에만 적용되는 조건이라, 부르는 쪽이 토지로
+        # 좁혀 놓았을 때만 넘어온다.
+        if land_categories:
+            clauses.append(
+                f"land_category IN ({','.join('?' * len(land_categories))})"
+            )
+            params += list(land_categories)
+        if exclude_farmland:
+            clauses.append("COALESCE(farmland, 0) = 0")
 
-        query = "SELECT payload, first_seen_at, notified_at FROM listings"
-        if clauses:
-            query += " WHERE " + " AND ".join(clauses)
-        query += " ORDER BY first_seen_at DESC LIMIT ? OFFSET ?"
-        params += [limit, offset]
+        return (" WHERE " + " AND ".join(clauses) if clauses else ""), params
 
+    def listings(self, limit: int = 100, offset: int = 0, **kw) -> list[dict]:
+        """물건 목록.
+
+        조건은 SQL 에서 먼저 거른다. 1.9만 건을 전부 파이썬으로 올려 json 을
+        풀어 비교하면 작은 VM 에서 요청마다 몇 초가 걸린다.
+        """
+        where, params = self._where(**kw)
+        query = ("SELECT payload, first_seen_at, notified_at FROM listings" + where
+                 + " ORDER BY first_seen_at DESC LIMIT ? OFFSET ?")
         with self._connect() as conn:
-            rows = conn.execute(query, params).fetchall()
+            rows = conn.execute(query, params + [limit, offset]).fetchall()
         return [
             {
                 **json.loads(r["payload"]),
@@ -209,7 +315,7 @@ class Store:
         잘린다. 수동 물건은 몇 건뿐이라 통째로 읽어 합치는 편이 싸다.
         """
         query = ("SELECT payload, first_seen_at, notified_at FROM listings"
-                 " WHERE json_extract(payload,'$.raw.manual') = 1")
+                 " WHERE manual = 1")
         params: list = []
         if not_expired_at is not None:
             query += (" AND (json_extract(payload,'$.deadline') IS NULL"
@@ -226,6 +332,18 @@ class Store:
             }
             for r in rows
         ]
+
+    def count_matching(self, **kw) -> int:
+        """listings() 와 같은 조건으로 개수만 센다.
+
+        payload 를 읽지 않아 즉시 끝난다. 조건을 SQL 로 전부 표현할 수 있을
+        때만 쓴다 - 파이썬이 더 거르면 이 숫자가 실제 총계보다 커진다.
+        """
+        where, params = self._where(**kw)
+        with self._connect() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) AS n FROM listings" + where, params
+            ).fetchone()["n"]
 
     def count(self, not_expired_at: str | None = None) -> dict[str, int]:
         query = "SELECT source, COUNT(*) AS n FROM listings"
@@ -321,6 +439,61 @@ class Store:
                 " WHERE payload LIKE '%map.kakao.com%'"
             )
             return cursor.rowcount
+
+    # ---- 관심 물건 ----
+
+    def favorite_keys(self) -> set[str]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT dedupe_key FROM favorites").fetchall()
+        return {r["dedupe_key"] for r in rows}
+
+    def add_favorite(self, dedupe_key: str, memo: str = "") -> bool:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO favorites(dedupe_key, added_at, memo) VALUES(?,?,?)"
+                " ON CONFLICT(dedupe_key) DO UPDATE SET memo=excluded.memo",
+                (dedupe_key, _now(), memo),
+            )
+        return True
+
+    def remove_favorite(self, dedupe_key: str) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute("DELETE FROM favorites WHERE dedupe_key = ?", (dedupe_key,))
+            return cur.rowcount > 0
+
+    def favorites(self) -> list[dict]:
+        """관심 물건. 마감된 것도 준다 - 담아 둔 것이 말없이 사라지면 안 된다."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT l.payload, l.first_seen_at, l.notified_at, f.added_at, f.memo"
+                " FROM favorites f JOIN listings l ON l.dedupe_key = f.dedupe_key"
+                " ORDER BY f.added_at DESC"
+            ).fetchall()
+        return [
+            {**json.loads(r["payload"]), "first_seen_at": r["first_seen_at"],
+             "notified": r["notified_at"] is not None,
+             "favorite": True, "favorited_at": r["added_at"], "memo": r["memo"]}
+            for r in rows
+        ]
+
+    def price_history(self, dedupe_key: str) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT price, seen_at FROM price_history"
+                " WHERE dedupe_key = ? ORDER BY seen_at",
+                (dedupe_key,),
+            ).fetchall()
+        return [{"price": r["price"], "at": r["seen_at"]} for r in rows]
+
+    def last_collected_at(self, source: str = "onbid") -> str | None:
+        """마지막으로 수집에 성공한 시각. 화면에 언제 자료인지 밝히는 데 쓴다."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT started_at FROM poll_log WHERE source = ? AND ok = 1"
+                " ORDER BY started_at DESC LIMIT 1",
+                (source,),
+            ).fetchone()
+        return row["started_at"] if row else None
 
     def migrate_onbid_urls(self, new_url: str) -> int:
         """404 가 된 옛 온비드 상세 링크를 목록 주소로 바꾼다.

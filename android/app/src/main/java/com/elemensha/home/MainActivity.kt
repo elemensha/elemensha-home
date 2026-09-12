@@ -130,6 +130,8 @@ private fun AppScaffold(viewModel: AppViewModel) {
                     onOpenDetail = viewModel::openDetail,
                     onToggleBiddable = viewModel::setBiddableOnly,
                     onAddCourtListing = viewModel::addManualListing,
+                    onToggleFavorite = viewModel::toggleFavorite,
+                    onToggleFavoritesOnly = viewModel::setFavoritesOnly,
                 )
                 Tab.MAP -> MapScreen(state = state)
                 Tab.PLAN -> PlanScreen(

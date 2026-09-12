@@ -39,8 +39,8 @@ from .store import Store
 STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 # 앱과 서버가 같은 버전 체계를 쓴다. 릴리스를 못 읽을 때의 바닥값이다.
-APP_VERSION = "0.13.0"
-APP_VERSION_CODE = 1300
+APP_VERSION = "0.14.0"
+APP_VERSION_CODE = 1400
 
 # 조건 매칭 시 훑어볼 최근 물건 수. 전부 객체로 만들어 비교해야 해서
 # 무제한으로 두면 작은 VM 의 메모리를 밀어낸다.
@@ -56,6 +56,53 @@ MATCH_SCAN_LIMIT = 6000
 # 지도에 한 번에 찍을 최대 마커. 페이지에 데이터를 박아 보내므로
 # 무제한이면 폰에서 몇 MB 짜리 HTML 을 받게 된다.
 MAP_MARKER_LIMIT = 3000
+
+# 목록 응답에 실어 보낼 raw 키. 나머지는 뺀다 - raw 가 응답의 49% 를
+# 차지했는데 그중 썸네일(221B)과 상수 문구는 아무도 읽지 않았다.
+# 저장은 그대로 두고 내보낼 때만 추린다.
+LIST_RAW_KEYS = frozenset({
+    "usage", "usage_minor", "needs_farmland_permit",
+    "prptDivNm", "map_url", "price_note", "caution",
+})
+
+
+def sql_expressible(profiles: list) -> bool:
+    """조건 하나가 SQL 로 완전히 표현되는가.
+
+    지목·농지·시군구·할인율·입찰가능은 payload 안이나 파생값이라 SQL 로
+    못 거른다. 그런 조건이 하나라도 있으면 행을 읽어 파이썬으로 봐야 한다.
+    여러 조건의 합집합도 SQL 한 번으로 안 되므로 하나일 때만 쓴다.
+    """
+    if len(profiles) != 1:
+        return False
+    p = profiles[0]
+    if p.sigungu or p.biddable_only or p.min_discount_ratio is not None:
+        return False
+    # 지목·농지는 토지에만 걸리는 조건이다. 종류가 토지로 좁혀져 있지 않으면
+    # SQL 로 밀 때 아파트까지 지목으로 걸러 버린다.
+    if (p.land_categories or p.exclude_farmland) and p.property_types != ["토지"]:
+        return False
+    return True
+
+
+def biddable_row(row: dict, now_str: str | None = None) -> bool:
+    """지금 입찰 기간에 들어와 있는지. 상태 코드보다 시각이 정확하다.
+
+    회차가 바뀔 때 온비드의 상태 코드가 늦게 따라오는 일이 있어서,
+    코드를 믿지 않고 한국시간으로 직접 본다.
+    """
+    now_str = now_str or now_kst_iso()
+    start = row.get("bid_start")
+    if start:
+        return str(start)[:16] <= now_str
+    return row.get("bid_status") == "진행중"
+
+
+def _slim(row: dict) -> dict:
+    raw = row.get("raw")
+    if not isinstance(raw, dict):
+        return row
+    return {**row, "raw": {k: v for k, v in raw.items() if k in LIST_RAW_KEYS}}
 
 # 한 번에 넘길 알림 최대 건수. 앱이 하루 한 번 가져가므로 하루치가
 # 한꺼번에 온다. 개별 알림이 아니라 요약으로 묶이니 많아도 괜찮다.
@@ -478,8 +525,10 @@ def select_listings(
     apply_filters: bool = True,
     include_expired: bool = False,
     biddable_only: bool = False,
+    favorites_only: bool = False,
     sort: str = "recent",
     page_cap: int = 500,
+    slim: bool = True,
 ) -> dict:
     """저장된 조건에 맞는 물건을 고른다.
 
@@ -495,10 +544,29 @@ def select_listings(
     """
     from .store import listing_from_dict
 
+    # 관심 물건은 조건과 무관하게 담아 둔 것이라 따로 간다.
+    if favorites_only:
+        rows = [r for r in store.favorites()
+                if not biddable_only or biddable_row(r)]
+        for row in rows:
+            row["_biddable"] = biddable_row(row)
+        page = min(limit, page_cap)
+        items = rows[offset:offset + page]
+        return {
+            "items": [_slim(i) for i in items] if slim else items,
+            "total_matched": len(rows),
+            "filters_applied": [],
+            "scan_truncated": False,
+            "expired_hidden": False,
+            "last_collected_at": store.last_collected_at(),
+        }
+
     profiles = [p for p in store.filters() if p.enabled]
     if filter_id is not None:
         profiles = [p for p in profiles if p.id == filter_id]
     filtering = apply_filters and bool(profiles)
+    # 조건을 SQL 로 다 표현할 수 있으면 세기와 읽기를 나눈다.
+    fast_path = False
 
     # 목록은 한 번에 500건까지. 지도는 한 화면에 다 찍어야 하므로
     # 더 크게 잡는다 - 500 으로 자르면 1,754건 중 500건만 찍히고,
@@ -511,11 +579,7 @@ def select_listings(
     now_str = now_kst_iso()
 
     def biddable(row: dict) -> bool:
-        """지금 입찰 기간에 들어와 있는지. 상태 코드보다 시각이 정확하다."""
-        start = row.get("bid_start")
-        if start:
-            return str(start)[:16] <= now_str
-        return row.get("bid_status") == "진행중"
+        return biddable_row(row, now_str)
 
 
     if not filtering:
@@ -540,20 +604,40 @@ def select_listings(
         # 앞쪽 페이지가 전부 탈락했을 때 빈 목록만 돌아오므로 넉넉히 읽는다.
         # 조건들의 가격 범위 합집합을 SQL 로 먼저 넘긴다. 전부 올려서
         # 파이썬으로 거르면 1.5만 건에서 요청마다 몇 초가 걸린다.
-        rows = store.listings(
+        # 종류·지역·면적도 SQL 로 넘긴다. 파이썬까지 올리면 행마다 JSON 을
+        # 파싱하느라 1.9만 건에서 4초가 걸린다.
+        where = dict(
             source=source,
-            limit=MATCH_SCAN_LIMIT,
-            offset=0,
             sources=sorted({s for p in profiles for s in p.sources}) or None,
             min_price=min((p.min_price_krw for p in profiles), default=None),
             max_price=max((p.max_price_krw for p in profiles), default=None),
             not_expired_at=cutoff,
+            property_types=sorted({t for p in profiles for t in p.property_types}) or None,
+            sido=sorted({s for p in profiles for s in p.sido}) or None,
         )
-        rows = [
-            row for row in rows
-            if (not biddable_only or biddable(row))
-            and any(p.matches(listing_from_dict(row)) for p in profiles)
-        ]
+
+        if sql_expressible(profiles):
+            # 조건이 SQL 로 다 표현되면 세는 것과 읽는 것을 나눈다.
+            # 총계를 세자고 수천 건의 payload 를 풀 이유가 없다.
+            one = profiles[0]
+            where["min_area"] = one.min_area_sqm or None
+            where["max_area"] = one.max_area_sqm
+            where["land_categories"] = one.land_categories or None
+            where["exclude_farmland"] = one.exclude_farmland
+            total = store.count_matching(**where)
+            rows = store.listings(limit=page, offset=offset, **where)
+            fast_path = True
+        else:
+            rows = store.listings(limit=MATCH_SCAN_LIMIT, offset=0, **where)
+            fast_path = False
+        if not fast_path:
+            rows = [
+                row for row in rows
+                if (not biddable_only or biddable(row))
+                and any(p.matches(listing_from_dict(row)) for p in profiles)
+            ]
+        elif biddable_only:
+            rows = [row for row in rows if biddable(row)]
         # 손으로 넣은 물건은 조건을 건너뛰고 항상 붙인다. 조건은 자동 수집한
         # 1.6만 건을 거르라고 있는 것이지, 직접 골라 담은 것을 숨기라고
         # 있는 것이 아니다. 넣었는데 안 보이면 넣은 줄도 모른다.
@@ -564,7 +648,9 @@ def select_listings(
             key = row.get("dedupe_key") or (row.get("source"), row.get("source_id"))
             if key not in seen:
                 rows.append(row)
-        total = len(rows)
+                total += 1
+        if not fast_path:
+            total = len(rows)
 
     if sort == "discount":
         rows.sort(key=lambda r: r.get("discount_ratio") or 0.0, reverse=True)
@@ -573,20 +659,27 @@ def select_listings(
     elif sort == "deadline":
         rows.sort(key=lambda r: r.get("deadline") or "9999")
 
-    items = rows[offset:offset + page] if filtering else rows
+    # 빠른 경로는 SQL 이 이미 잘라 왔다. 또 자르면 빈 목록이 나온다.
+    items = rows if (not filtering or fast_path) else rows[offset:offset + page]
     # 지도 말풍선이 상태를 표시해야 한다. 다시 계산하면 목록과 지도가
     # 어긋날 수 있으므로 여기서 판정한 값을 그대로 실어 보낸다.
+    favorites = store.favorite_keys()
     for row in items:
         row["_biddable"] = biddable(row)
+        row["favorite"] = (
+            row.get("dedupe_key") or f"{row.get('source')}:{row.get('source_id')}"
+        ) in favorites
 
     return {
-        "items": items,
+        "items": [_slim(i) for i in items] if slim else items,
         "total_matched": total,
         "filters_applied": [p.name for p in profiles] if filtering else [],
         # 조건 검사는 최근 MATCH_SCAN_LIMIT 건까지만 훑는다. 그 너머에도
         # 맞는 물건이 있을 수 있다는 뜻이라 화면에서 알려줘야 한다.
         "scan_truncated": total >= MATCH_SCAN_LIMIT,
         "expired_hidden": not include_expired,
+        # 언제 자료인지 밝히지 않으면 오래된 값을 지금 값으로 읽는다.
+        "last_collected_at": store.last_collected_at(),
     }
 
 
@@ -718,6 +811,7 @@ async def get_map(
         # 말풍선에서 상세를 가져오는 데 쓴다. 이 응답 자체가 인증을
         # 통과해 나가므로 받는 쪽은 이미 이 토큰을 갖고 있다.
         api_token=settings.api_token,
+        last_collected_at=store.last_collected_at() or "",
     ))
 
 
@@ -730,14 +824,40 @@ async def get_listings(
     apply_filters: bool = True,
     include_expired: bool = False,
     biddable_only: bool = False,
+    favorites_only: bool = False,
     sort: str = "recent",
     _: None = Depends(require_token),
 ) -> dict:
     return select_listings(
         source=source, limit=limit, offset=offset, filter_id=filter_id,
         apply_filters=apply_filters, include_expired=include_expired,
-        biddable_only=biddable_only, sort=sort,
+        biddable_only=biddable_only, favorites_only=favorites_only, sort=sort,
     )
+
+
+@app.get("/api/favorites")
+async def get_favorites(_: None = Depends(require_token)) -> dict:
+    items = store.favorites()
+    for row in items:
+        row["_biddable"] = biddable_row(row)
+    return {"items": [_slim(i) for i in items], "total_matched": len(items)}
+
+
+@app.post("/api/favorites/{dedupe_key:path}")
+async def add_favorite(
+    dedupe_key: str, memo: str = "", _: None = Depends(require_token)
+) -> dict:
+    if store.find_listing(dedupe_key) is None:
+        raise HTTPException(status_code=404, detail="없는 물건")
+    store.add_favorite(dedupe_key, memo)
+    return {"ok": True, "dedupe_key": dedupe_key}
+
+
+@app.delete("/api/favorites/{dedupe_key:path}")
+async def delete_favorite(
+    dedupe_key: str, _: None = Depends(require_token)
+) -> dict:
+    return {"deleted": store.remove_favorite(dedupe_key)}
 
 
 @app.get("/api/notifications")
