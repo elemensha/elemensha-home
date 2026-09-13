@@ -23,3 +23,7 @@ build/
 # 에디터
 .idea/
 .vscode/
+
+# 전후 비교용 그림. 한 번 보고 마는 것이라 저장소에 안 넣는다.
+tools/shots/
+tools/mapqa/

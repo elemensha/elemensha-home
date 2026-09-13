@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -58,6 +57,8 @@ fun CourtEntryDialog(
     val scroll = rememberScrollState()
 
     AlertDialog(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(Dim.BandRadius),
+        containerColor = MaterialTheme.colorScheme.surface,
         onDismissRequest = onDismiss,
         title = { Text("법원경매 물건 추가") },
         text = {
@@ -99,14 +100,13 @@ fun CourtEntryDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                Text("물건 종류", style = MaterialTheme.typography.labelLarge)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                SectionLabel("물건 종류")
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(Dim.GapTight),
+                    verticalArrangement = Arrangement.spacedBy(Dim.GapTight),
+                ) {
                     TYPES.forEach {
-                        FilterChip(
-                            selected = type == it,
-                            onClick = { type = it },
-                            label = { Text(it) },
-                        )
+                        SelectChip(selected = type == it, label = it, onClick = { type = it })
                     }
                 }
 

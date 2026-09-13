@@ -7,14 +7,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -58,10 +59,18 @@ fun PlanScreen(
     var sellText by remember { mutableStateOf("") }
 
     LazyColumn(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Dim.ScreenPad),
+        verticalArrangement = Arrangement.spacedBy(Dim.Gap),
     ) {
-        item { Spacer(Modifier.height(8.dp)) }
+        item { Spacer(Modifier.height(6.dp)) }
+
+        item {
+            ScreenBand(
+                eyebrow = "ELEMENSHA HOME",
+                title = "자금계획",
+                sub = "얼마까지 살 수 있는지, 현금이 모자라는지를 본다",
+            )
+        }
 
         item {
             SectionCard("내 자산") {
@@ -83,14 +92,15 @@ fun PlanScreen(
                 }
 
                 Spacer(Modifier.height(8.dp))
-                Text("보유 주택 수", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionLabel("보유 주택 수")
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(Dim.GapTight)) {
                     listOf(0 to "무주택", 1 to "1주택", 2 to "2주택", 3 to "3주택+")
                         .forEach { (value, label) ->
-                            FilterChip(
+                            SelectChip(
                                 selected = borrower.ownedHouses == value,
+                                label = label,
                                 onClick = { onBorrowerChange(borrower.copy(ownedHouses = value)) },
-                                label = { Text(label) },
                             )
                         }
                 }
@@ -102,10 +112,9 @@ fun PlanScreen(
                     ToggleRow("기존 주택 처분조건 설정", borrower.hasDisposalCondition) {
                         onBorrowerChange(borrower.copy(hasDisposalCondition = it))
                     }
-                    Text(
+                    NoteRow(
+                        Meaning.Caution,
                         "규제지역 1주택자는 처분조건이 없으면 주담대가 아예 나오지 않는다 (LTV 0%).",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = WarningAmber,
                     )
                 }
                 ToggleRow("서민·실수요자 우대 대상", borrower.isLowIncomePriority) {
@@ -161,6 +170,11 @@ fun PlanScreen(
 
                 Spacer(Modifier.height(12.dp))
                 Button(
+                    shape = RoundedCornerShape(11.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Tone.BlueDeep,
+                        contentColor = Color.White,
+                    ),
                     onClick = {
                         val price = parseManwonInput(priceText)
                         if (price <= 0) return@Button
@@ -177,7 +191,7 @@ fun PlanScreen(
                         )
                     },
                     enabled = !state.loading && state.isConfigured,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = Dim.Tap),
                 ) {
                     if (state.loading) {
                         CircularProgressIndicator(Modifier.height(18.dp), strokeWidth = 2.dp)
@@ -186,11 +200,8 @@ fun PlanScreen(
                     }
                 }
                 if (!state.isConfigured) {
-                    Text(
-                        "설정 탭에서 서버 주소를 먼저 넣어야 한다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                    Spacer(Modifier.height(6.dp))
+                    NoteRow(Meaning.Danger, "설정 탭에서 서버 주소를 먼저 넣어야 한다.")
                 }
             }
         }
@@ -207,8 +218,25 @@ fun PlanScreen(
 @Composable
 private fun PlanResultCard(plan: PlanResponse) {
     SectionCard("결과") {
-        KeyValue("살 수 있는 최대 가격", formatKrw(plan.maxAffordablePriceKrw), emphasize = true)
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        // 세 숫자가 이 화면의 답이다. 나머지는 그 답이 어떻게 나왔는지다.
+        Row(horizontalArrangement = Arrangement.spacedBy(Dim.GapTight)) {
+            StatTile(
+                "살 수 있는 최대 가격", formatKrw(plan.maxAffordablePriceKrw),
+                Modifier.weight(1f),
+            )
+            StatTile(
+                "필요 현금", formatKrw(plan.cashNeededKrw), Modifier.weight(1f),
+                meaning = if (plan.cashShortfallKrw > 0) Meaning.Danger else Meaning.Good,
+            )
+        }
+        if (plan.cashShortfallKrw > 0) {
+            Spacer(Modifier.height(5.dp))
+            NoteRow(Meaning.Danger, "현금 " + formatKrw(plan.cashShortfallKrw) + " 부족")
+        }
+        HorizontalDivider(
+            Modifier.padding(vertical = 8.dp),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
 
         KeyValue("대출 한도", formatKrw(plan.capacity.limitKrw), emphasize = true)
         Text(
@@ -224,35 +252,36 @@ private fun PlanResultCard(plan: PlanResponse) {
             formatPercent(plan.capacity.stressRateApplied, 2),
         )
 
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        HorizontalDivider(
+            Modifier.padding(vertical = 8.dp),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
         KeyValue(
             "취득 부대비용",
             "${formatKrw(plan.acquisitionCost.totalKrw)} (${formatPercent(plan.acquisitionCost.effectiveRate, 2)})",
         )
         KeyValue("필요 현금", formatKrw(plan.cashNeededKrw), emphasize = true)
-        if (plan.cashShortfallKrw > 0) {
-            Text(
-                "현금 ${formatKrw(plan.cashShortfallKrw)} 부족",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                fontWeight = FontWeight.Bold,
-            )
-        }
 
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        HorizontalDivider(
+            Modifier.padding(vertical = 8.dp),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
         KeyValue("보유 중 연 현금흐름", formatKrw(plan.holding.annualNetKrw))
         if (plan.holding.annualRentSavedKrw == 0L) {
-            Text(
+            Spacer(Modifier.height(5.dp))
+            NoteRow(
+                Meaning.Caution,
                 "안 내게 되는 월세를 0으로 두고 계산했다. 실거주라면 그 값을 넣어야 " +
                     "결과가 한쪽으로 기울지 않는다.",
-                style = MaterialTheme.typography.bodySmall,
-                color = WarningAmber,
             )
         }
 
         if (plan.scenarios.isNotEmpty()) {
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            Text("매도 시나리오", style = MaterialTheme.typography.titleSmall)
+            HorizontalDivider(
+            Modifier.padding(vertical = 8.dp),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+            SectionLabel("매도 시나리오")
             Text(
                 "아래 가격은 전부 가정이다. 그 값에 팔린다는 뜻이 아니다.",
                 style = MaterialTheme.typography.bodySmall,
@@ -325,18 +354,19 @@ private fun SourcesCard(plan: PlanResponse) {
 
         if (sources.unverifiedCount > 0) {
             Spacer(Modifier.height(8.dp))
-            Text(
-                "이번 계산에 쓰인 ${sources.used.size}개 값 중 ${sources.unverifiedCount}개가 미검증이다.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = WarningAmber,
-                fontWeight = FontWeight.Bold,
+            NoteRow(
+                Meaning.Caution,
+                "이번 계산에 쓰인 ${sources.used.size}개 값 중 " +
+                    "${sources.unverifiedCount}개가 미검증이다.",
             )
         }
 
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth()) {
-            Text(if (expanded) "출처 접기" else "파라미터별 출처 보기")
-        }
+        GhostAction(
+            if (expanded) "출처 접기" else "파라미터별 출처 보기",
+            { expanded = !expanded },
+            Modifier.fillMaxWidth(),
+        )
 
         if (expanded) {
             Spacer(Modifier.height(8.dp))
@@ -349,11 +379,9 @@ private fun SourcesCard(plan: PlanResponse) {
 private fun CitationRow(citation: Citation) {
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
+            ToneBadge(
                 if (citation.isVerified) "확인됨" else "미확인",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (citation.isVerified) VerifiedGreen else WarningAmber,
-                fontWeight = FontWeight.Bold,
+                if (citation.isVerified) Meaning.Good else Meaning.Caution,
             )
             Text(
                 "  ${citation.label}",
@@ -375,11 +403,8 @@ private fun CitationRow(citation: Citation) {
                 )
             }
         } else {
-            Text(
-                citation.warning,
-                style = MaterialTheme.typography.bodySmall,
-                color = WarningAmber,
-            )
+            Spacer(Modifier.height(3.dp))
+            NoteRow(Meaning.Caution, citation.warning)
         }
     }
 }
@@ -388,17 +413,10 @@ private fun CitationRow(citation: Citation) {
 
 @Composable
 fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-            content()
-        }
+    HomeCard {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        content()
     }
 }
 

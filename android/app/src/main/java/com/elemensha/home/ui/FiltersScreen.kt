@@ -12,11 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -75,10 +71,18 @@ fun FiltersScreen(
     var maxPyeong by remember { mutableStateOf("") }
 
     LazyColumn(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Dim.ScreenPad),
+        verticalArrangement = Arrangement.spacedBy(Dim.Gap),
     ) {
-        item { Spacer(Modifier.height(8.dp)) }
+        item { Spacer(Modifier.height(6.dp)) }
+
+        item {
+            ScreenBand(
+                eyebrow = "ELEMENSHA HOME",
+                title = "내 조건",
+                sub = "여기서 만든 조건이 물건 탭의 칩과 알림 기준이 된다",
+            )
+        }
 
         item {
             SectionCard(if (draft.id != null) "조건 수정" else "새 조건") {
@@ -91,23 +95,26 @@ fun FiltersScreen(
                 )
 
                 Spacer(Modifier.height(12.dp))
-                Text("소스", style = MaterialTheme.typography.labelLarge)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                SectionLabel("소스")
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(Dim.GapTight),
+                    verticalArrangement = Arrangement.spacedBy(Dim.GapTight),
+                ) {
                     SOURCES.forEach { (value, label) ->
-                        FilterChip(
+                        SelectChip(
                             selected = value in draft.sources,
+                            label = label,
                             onClick = {
                                 draft = draft.copy(
                                     sources = draft.sources.toggle(value)
                                 )
                             },
-                            label = { Text(label) },
                         )
                     }
                 }
 
                 Spacer(Modifier.height(12.dp))
-                Text("지역", style = MaterialTheme.typography.labelLarge)
+                SectionLabel("지역")
                 Text(
                     if (draft.sido.isEmpty()) "선택 안 하면 전국" else "선택한 지역만",
                     style = MaterialTheme.typography.bodySmall,
@@ -115,38 +122,40 @@ fun FiltersScreen(
                 )
                 // 시도 목록은 서버가 실제로 수집한 것에서 온다. 하드코딩하면
                 // '전남광주통합특별시' 같은 개편 이름을 놓친다.
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(Dim.GapTight),
+                    verticalArrangement = Arrangement.spacedBy(Dim.GapTight),
+                ) {
                     state.regions.forEach { region ->
-                        FilterChip(
+                        SelectChip(
                             selected = region.sido in draft.sido,
+                            label = region.sido
+                                .removeSuffix("특별자치도")
+                                .removeSuffix("특별자치시")
+                                .removeSuffix("특별시")
+                                .removeSuffix("광역시") + " ${region.count}",
                             onClick = {
                                 draft = draft.copy(sido = draft.sido.toggle(region.sido))
-                            },
-                            label = {
-                                Text(
-                                    region.sido
-                                        .removeSuffix("특별자치도")
-                                        .removeSuffix("특별자치시")
-                                        .removeSuffix("특별시")
-                                        .removeSuffix("광역시") + " ${region.count}"
-                                )
                             },
                         )
                     }
                 }
 
                 Spacer(Modifier.height(12.dp))
-                Text("물건 종류", style = MaterialTheme.typography.labelLarge)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                SectionLabel("물건 종류")
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(Dim.GapTight),
+                    verticalArrangement = Arrangement.spacedBy(Dim.GapTight),
+                ) {
                     TYPES.forEach { value ->
-                        FilterChip(
+                        SelectChip(
                             selected = value in draft.propertyTypes,
+                            label = value,
                             onClick = {
                                 draft = draft.copy(
                                     propertyTypes = draft.propertyTypes.toggle(value)
                                 )
                             },
-                            label = { Text(value) },
                         )
                     }
                 }
@@ -154,24 +163,27 @@ fun FiltersScreen(
                 // 토지를 고른 경우에만 지목을 보여준다. 다른 종류에는 없는 개념이다.
                 if ("토지" in draft.propertyTypes && state.landCategories.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
-                    Text("토지 지목", style = MaterialTheme.typography.labelLarge)
+                    SectionLabel("토지 지목")
                     Text(
                         if (draft.landCategories.isEmpty()) "선택 안 하면 전부"
                         else "선택한 지목만",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(Dim.GapTight),
+                    verticalArrangement = Arrangement.spacedBy(Dim.GapTight),
+                ) {
                         state.landCategories.forEach { cat ->
-                            FilterChip(
+                            SelectChip(
                                 selected = cat.category in draft.landCategories,
+                                label = "${cat.category} ${cat.count}",
                                 onClick = {
                                     draft = draft.copy(
                                         landCategories =
                                             draft.landCategories.toggle(cat.category)
                                     )
                                 },
-                                label = { Text("${cat.category} ${cat.count}") },
                             )
                         }
                     }
@@ -269,7 +281,8 @@ fun FiltersScreen(
 
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
+                PrimaryAction(
+                    text = if (draft.id != null) "수정 저장" else "조건 추가",
                     onClick = {
                         onSave(
                             draft.copy(
@@ -289,11 +302,12 @@ fun FiltersScreen(
                     },
                     enabled = !state.loading && state.isConfigured,
                     modifier = Modifier.weight(1f),
-                ) { Text(if (draft.id != null) "수정 저장" else "조건 추가") }
+                )
 
                     // 수정 중일 때만. 잘못 눌러 들어왔을 때 빠져나갈 길이 필요하다.
                     if (draft.id != null) {
-                        OutlinedButton(
+                        GhostAction(
+                            text = "취소",
                             onClick = {
                                 draft = FilterProfile(sido = emptyList())
                                 minText = ""
@@ -301,7 +315,7 @@ fun FiltersScreen(
                                 minPyeong = ""
                                 maxPyeong = ""
                             },
-                        ) { Text("취소") }
+                        )
                     }
                 }
             }
@@ -309,13 +323,12 @@ fun FiltersScreen(
 
         if (state.filters.isNotEmpty()) {
             item {
-                Text("저장된 조건", style = MaterialTheme.typography.titleMedium)
+                SectionLabel("저장된 조건")
             }
         }
 
         items(state.filters, key = { it.id ?: it.name.hashCode() }) { filter ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+            HomeCard {
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -325,15 +338,15 @@ fun FiltersScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             // 지금까지는 고치려면 지우고 새로 만들어야 했다.
                             // 조건 번호가 계속 올라간 이유가 그것이다.
-                            OutlinedButton(onClick = {
+                            GhostAction("수정", small = true, onClick = {
                                 draft = filter
                                 minText = manwonText(filter.minPriceKrw)
                                 maxText = manwonText(filter.maxPriceKrw)
                                 minPyeong = pyeongText(filter.minAreaSqm)
                                 maxPyeong = pyeongText(filter.maxAreaSqm)
-                            }) { Text("수정") }
+                            })
                             filter.id?.let { id ->
-                                OutlinedButton(onClick = { onDelete(id) }) { Text("삭제") }
+                                GhostAction("삭제", small = true, onClick = { onDelete(id) })
                             }
                         }
                     }
@@ -360,7 +373,6 @@ fun FiltersScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
             }
         }
 

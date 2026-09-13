@@ -108,84 +108,132 @@ def render(
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>물건 지도</title>
 <style>
+  /* 색 규칙은 앱과 같다. 로고 큐브의 세 면에서 왔고 각각 뜻이 하나씩이다.
+     빨강=돈을 잃을 수 있는 것, 초록=자료로 확인된 것, 파랑=누를 수 있는 것,
+     호박=출처를 확인하지 못한 값. 그 밖은 전부 먹색이다. */
+  :root {{
+    --gp-900:#0B1016; --gp-800:#141C25; --gp-700:#1E2935;
+    --on-dark:#EEF3F7; --on-dark-mute:#9DAEBF;
+    --paper:#FDFEFE; --paper-2:#F3F6F8; --paper-3:#E9EEF2;
+    --ink:#16202B; --ink2:#45566B; --muted:#78889B; --line:rgba(22,32,43,.12);
+    --red:#BD2033; --red-dk:#8E1424; --red-wash:#FCEDEF;
+    --green:#7CBE38; --green-dk:#3F7A1B; --green-wash:#EFF6E8;
+    --blue:#45A1E4; --blue-dk:#1F6FAF; --blue-wash:#EAF3FB;
+    --amber:#8F5A0E; --amber-wash:#FDF3E3;
+  }}
   * {{ box-sizing:border-box; }}
-  html, body {{ margin:0; height:100%; font-family:-apple-system,'Noto Sans KR',sans-serif; }}
+  html, body {{ margin:0; height:100%; color:var(--ink);
+         font-family:-apple-system,'Noto Sans KR',sans-serif;
+         letter-spacing:-.01em; }}
+  /* 한글은 단어 중간에서 끊기면 읽는 속도가 눈에 띄게 떨어진다. */
+  b, label, button, .addr, .sub, .risk {{ word-break:keep-all; overflow-wrap:anywhere; }}
   #map {{ width:100%; height:100%; }}
-  #bar {{ position:fixed; top:0; left:0; right:0; z-index:10; background:rgba(255,255,255,.96);
-         border-bottom:1px solid #ddd; padding:8px 10px; font-size:13px; }}
-  #bar .row {{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }}
-  #bar input[type=number] {{ width:60px; padding:4px 6px; border:1px solid #ccc;
-         border-radius:6px; font-size:13px; }}
-  #bar input[type=search] {{ padding:5px 8px; border:1px solid #ccc;
-         border-radius:6px; font-size:13px; font-family:inherit; }}
+  /* 위 띠는 앱 화면 맨 위의 흑연 띠와 같은 것이다. 지도 위에 흰 판을
+     얹으면 지도와 경계가 흐려져서 어디까지가 조작부인지 안 보인다. */
+  #bar {{ position:fixed; top:0; left:0; right:0; z-index:10;
+         background:linear-gradient(180deg,var(--gp-700),var(--gp-900));
+         color:var(--on-dark); padding:7px 10px; font-size:13px;
+         box-shadow:0 6px 18px -10px rgba(11,16,22,.75); }}
+  #bar .row {{ display:flex; gap:6px; align-items:center; flex-wrap:wrap;
+         row-gap:4px; }}
+  #bar input[type=number] {{ width:62px; }}
+  #bar input[type=number], #bar input[type=search] {{
+         min-height:31px; padding:4px 8px; border:1px solid rgba(255,255,255,.18);
+         border-radius:8px; font-size:13px; font-family:inherit;
+         background:rgba(255,255,255,.07); color:var(--on-dark); }}
+  #bar input::placeholder {{ color:var(--on-dark-mute); }}
+  #bar input:focus {{ outline:2px solid var(--blue); outline-offset:0; }}
   #go {{ margin-left:0 !important; }}
-  #count {{ font-weight:600; }}
-  .upd {{ color:#888; }}
-  #bar button {{ margin-left:auto; background:#eef1f5; border:0; border-radius:6px;
-         padding:3px 9px; font-size:12px; cursor:pointer; font-family:inherit; color:#333; }}
+  #count {{ font-weight:700; }}
+  .upd {{ color:var(--on-dark-mute); }}
+  #bar button {{ margin-left:auto; background:rgba(255,255,255,.10);
+         border:1px solid rgba(255,255,255,.16); border-radius:8px;
+         min-height:31px; padding:4px 11px; font-size:12.5px; font-weight:700;
+         cursor:pointer; font-family:inherit; color:var(--on-dark); }}
+  #bar button:active {{ transform:translateY(1px); }}
+  #go {{ background:var(--blue-dk) !important; border-color:var(--blue-dk) !important;
+         color:#fff !important; }}
   #more button {{ margin-left:0; }}
   #more.hide {{ display:none; }}
-  .warn {{ color:#b26a00; }}
-  label {{ display:flex; align-items:center; gap:4px; }}
+  .warn {{ color:#E3B872; }}
+  /* 체크박스는 글자까지가 누르는 자리다. 손가락이 닿는 높이를 맞춘다. */
+  #bar label {{ display:flex; align-items:center; gap:5px; min-height:30px;
+         color:var(--on-dark); }}
+  #bar input[type=checkbox] {{ width:18px; height:18px; accent-color:var(--blue); }}
   /* 점 하나로는 지도 위에서 안 보인다. 평수를 적은 알약으로 만들어
      크기와 색으로 눈에 띄게 하고, 누르기 전에 규모를 알 수 있게 한다. */
   .pin {{ padding:3px 7px; border-radius:11px; border:2px solid #fff; color:#fff;
           font-size:11px; font-weight:700; white-space:nowrap; line-height:1.25;
           box-shadow:0 1px 4px rgba(0,0,0,.45); }}
-  .pin.live {{ background:#e11d48; }}
-  .pin.soon {{ background:#1f2937; }}
-  .pin.share {{ background:#7c3aed; }}
+  .pin.live {{ background:var(--red); }}
+  .pin.soon {{ background:var(--gp-700); }}
+  /* 지분은 피하려고 보는 것이라 '조심' 색을 덮어쓴다. 글자용 호박색은
+     지도 위에서 가라앉아서, 핀에만 한 단계 밝은 짝을 쓴다. */
+  .pin.share {{ background:#C08420; }}
   .cl {{ display:flex; align-items:center; justify-content:center; border-radius:50%;
-         color:#fff; font-weight:700; font-size:12px; background:rgba(26,115,232,.85);
+         color:#fff; font-weight:700; font-size:12px; background:rgba(31,111,175,.88);
          border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.35); }}
-  .iw {{ padding:11px 13px; font-size:13px; line-height:1.55; min-width:210px; max-width:320px;
-         max-height:62vh; overflow-y:auto;
-         background:#fff; border-radius:8px; }}
+  .iw {{ padding:12px 13px; font-size:13px; line-height:1.55; min-width:210px; max-width:320px;
+         max-height:62vh; overflow-y:auto; color:var(--ink);
+         background:var(--paper); border-radius:12px;
+         box-shadow:0 12px 28px -16px rgba(11,16,22,.55); }}
   .iw b {{ display:block; margin-bottom:4px; }}
-  .iw .addr {{ color:#666; font-size:12px; margin-bottom:6px; word-break:keep-all; }}
-  .iw a {{ display:inline-block; margin-top:7px; color:#1a73e8; text-decoration:none; }}
-  .iw .acts {{ display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;
-         border-top:1px solid #eee; padding-top:7px; }}
-  .iw button {{ background:#1a73e8; color:#fff; border:0; border-radius:6px;
-         padding:5px 10px; font-size:12px; cursor:pointer; font-family:inherit; }}
-  .iw button.copy {{ background:#5f6368; }}
-  .iw button.fav {{ background:#b26a00; }}
-  .iw .risk {{ color:#b00020; font-size:12px; margin-top:6px; word-break:keep-all; }}
-  .iw .sub {{ color:#555; font-size:12px; margin-top:5px; word-break:keep-all; }}
-  .iw .muted {{ color:#888; font-size:12px; margin-top:6px; }}
-  .iw .gl {{ margin-top:9px; padding:8px 9px; background:#f5f7fa; border-radius:6px;
+  .iw .addr {{ color:var(--ink2); font-size:12px; margin-bottom:6px; }}
+  .iw a {{ display:inline-block; margin-top:7px; color:var(--blue-dk);
+         text-decoration:none; }}
+  .iw .acts {{ display:flex; gap:7px; flex-wrap:wrap; margin-top:9px;
+         border-top:1px solid var(--line); padding-top:8px; }}
+  .iw button {{ background:var(--blue-dk); color:#fff; border:0; border-radius:8px;
+         min-height:34px; padding:6px 11px; font-size:12.5px; font-weight:700;
+         cursor:pointer; font-family:inherit; }}
+  .iw button.copy {{ background:var(--paper-3); color:var(--ink); }}
+  .iw button.fav {{ background:var(--amber); }}
+  .iw .risk {{ color:var(--red-dk); font-size:12px; margin-top:6px; }}
+  .iw .sub {{ color:var(--ink2); font-size:12px; margin-top:5px; }}
+  .iw .muted {{ color:var(--muted); font-size:12px; margin-top:6px; }}
+  .iw .gl {{ margin-top:9px; padding:8px 9px; background:var(--paper-2);
+         border-left:3px solid var(--paper-3); border-radius:8px;
          font-size:12px; line-height:1.5; word-break:keep-all; }}
-  .iw .gl b {{ display:block; margin-bottom:3px; color:#1a3a6b; }}
-  .iw .gl .im {{ margin-top:4px; color:#b00020; }}
-  .iw .gl .lw {{ margin-top:4px; color:#888; font-size:11px; }}
-  .iw .tn {{ margin-top:10px; padding:9px; border-radius:6px; font-size:12px;
+  .iw .gl b {{ display:block; margin-bottom:3px; color:var(--ink); }}
+  .iw .gl .im {{ margin-top:4px; color:var(--amber); }}
+  .iw .gl .lw {{ margin-top:4px; color:var(--muted); font-size:11px; }}
+  .iw .tn {{ margin-top:10px; padding:9px; border-radius:8px; font-size:12px;
          line-height:1.5; word-break:keep-all; border-left:4px solid; }}
-  .iw .tn.danger {{ background:#fdecea; border-color:#b00020; }}
-  .iw .tn.caution {{ background:#fff8e1; border-color:#b26a00; }}
+  .iw .tn.danger {{ background:var(--red-wash); border-color:var(--red); }}
+  .iw .tn.caution {{ background:var(--amber-wash); border-color:var(--amber); }}
   .iw .tn > b {{ display:block; margin-bottom:4px; }}
-  .iw .tn.danger > b {{ color:#b00020; }}
-  .iw .tn.caution > b {{ color:#8a4b00; }}
-  .iw .tn .sm {{ font-weight:600; }}
-  .iw .tn .bl {{ margin-top:5px; color:#555; }}
+  .iw .tn.danger > b {{ color:var(--red-dk); }}
+  .iw .tn.caution > b {{ color:var(--amber); }}
+  .iw .tn .sm {{ font-weight:700; }}
+  .iw .tn .bl {{ margin-top:5px; color:var(--ink2); }}
   .iw .tn .tt {{ margin-top:6px; padding-top:5px; border-top:1px solid rgba(0,0,0,.08); }}
-  .iw .tn .vd {{ margin-top:2px; color:#444; }}
-  .iw .tn .cv {{ margin-top:6px; color:#777; font-size:11px; }}
-  .iw .kd {{ margin-top:10px; padding:9px; background:#fff4e5; border-radius:6px;
+  .iw .tn .vd {{ margin-top:2px; color:var(--ink2); }}
+  .iw .tn .cv {{ margin-top:6px; color:var(--muted); font-size:11px; }}
+  .iw .kd {{ margin-top:10px; padding:9px; background:var(--amber-wash);
+         border-left:4px solid var(--amber); border-radius:8px;
          font-size:12px; line-height:1.5; word-break:keep-all; }}
-  .iw .kd > b {{ display:block; margin-bottom:4px; color:#8a4b00; }}
-  .iw .kd .kp {{ margin-top:4px; color:#8a4b00; }}
-  .iw .kd .lw {{ margin-top:4px; color:#888; font-size:11px; }}
-  .iw .ck {{ margin-top:10px; padding:9px; background:#eef6ee; border-radius:6px;
+  .iw .kd > b {{ display:block; margin-bottom:4px; color:var(--amber); }}
+  .iw .kd .kp {{ margin-top:4px; color:var(--amber); }}
+  .iw .kd .lw {{ margin-top:4px; color:var(--muted); font-size:11px; }}
+  .iw .ck {{ margin-top:10px; padding:9px; background:var(--green-wash);
+         border-left:4px solid var(--green); border-radius:8px;
          font-size:12px; line-height:1.5; word-break:keep-all; }}
-  .iw .ck > b {{ display:block; margin-bottom:6px; color:#14532d; }}
-  .iw .st {{ margin-top:7px; padding-top:7px; border-top:1px solid #d7e7d7; }}
+  .iw .ck > b {{ display:block; margin-bottom:6px; color:var(--green-dk); }}
+  .iw .st {{ margin-top:7px; padding-top:7px; border-top:1px solid rgba(63,122,27,.22); }}
   .iw .st:first-of-type {{ border-top:0; padding-top:0; }}
   .iw .st i {{ font-style:normal; font-weight:700; display:block; margin-bottom:3px; }}
-  .iw .st em {{ font-style:normal; font-weight:400; color:#666; font-size:11px; }}
-  .iw .st .hw {{ margin-top:3px; color:#444; }}
-  .iw .st .jd {{ margin-top:3px; color:#14532d; }}
-  .live-t {{ color:#0a7c2f; font-weight:600; }}
-  .soon-t {{ color:#777; }}
+  .iw .st em {{ font-style:normal; font-weight:400; color:var(--muted); font-size:11px; }}
+  .iw .st .hw {{ margin-top:3px; color:var(--ink2); }}
+  .iw .st .jd {{ margin-top:3px; color:var(--green-dk); }}
+  .live-t {{ color:var(--green-dk); font-weight:700; }}
+  .soon-t {{ color:var(--muted); }}
+  /* 320px 에서는 한 줄에 셋이 안 들어간다. 글자를 줄이는 게 아니라 접는다. */
+  @media (max-width:360px) {{
+    #bar {{ padding:8px 9px; font-size:12.5px; }}
+    #bar .row {{ gap:6px; }}
+    #bar input[type=number] {{ width:54px; }}
+    #bar button {{ padding:5px 9px; }}
+  }}
 </style></head><body>
 <div id="bar">
   <div class="row">
@@ -196,25 +244,25 @@ def render(
     {capped}
     <button id="fold" type="button">접기</button>
   </div>
-  <div class="row" style="margin-top:6px">
+  <div class="row" style="margin-top:4px">
     <input type="search" id="q" placeholder="지역·주소로 이동 (예: 부산진구, 양평군 문호리)"
            style="flex:1; min-width:150px">
     <button id="go" type="button">이동</button>
   </div>
   <div id="more">
-    <div class="row" style="margin-top:6px">
+    <div class="row" style="margin-top:4px">
       <label>가격 <input type="number" id="pmin" placeholder="최소" min="0"> ~
         <input type="number" id="pmax" placeholder="최대" min="0"> 만원</label>
     </div>
-    <div class="row" style="margin-top:5px">
+    <div class="row" style="margin-top:3px">
       <label>면적 <input type="number" id="amin" placeholder="최소" min="0"> ~
         <input type="number" id="amax" placeholder="최대" min="0"> 평</label>
     </div>
-    <div class="row" style="margin-top:5px">
+    <div class="row" style="margin-top:3px">
       <label>마감 <input type="number" id="dday" placeholder="일" min="0" style="width:52px"> 일 이내</label>
       <label><input type="checkbox" id="live"> 입찰 가능만</label>
     </div>
-    <div class="row" style="margin-top:5px">
+    <div class="row" style="margin-top:3px">
       <label><input type="checkbox" id="fav"> 관심만</label>
       <label><input type="checkbox" id="noshare"> 지분 제외</label>
       <label><input type="checkbox" id="cad"> 지적편집도</label>

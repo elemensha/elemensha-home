@@ -7,13 +7,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Switch
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement as Arr
@@ -51,10 +48,18 @@ fun SettingsScreen(
     var token by remember { mutableStateOf(state.apiToken) }
 
     LazyColumn(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Dim.ScreenPad),
+        verticalArrangement = Arrangement.spacedBy(Dim.Gap),
     ) {
-        item { Spacer(Modifier.height(8.dp)) }
+        item { Spacer(Modifier.height(6.dp)) }
+
+        item {
+            ScreenBand(
+                eyebrow = "ELEMENSHA HOME",
+                title = "설정",
+                sub = "서버 연결 · 알림 시각 · 앱 업데이트",
+            )
+        }
 
         item {
             SectionCard("서버 연결") {
@@ -79,10 +84,7 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(12.dp))
-                Button(
-                    onClick = { onSave(url, token) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("저장하고 연결") }
+                PrimaryAction("저장하고 연결", { onSave(url, token) }, Modifier.fillMaxWidth())
             }
         }
 
@@ -111,14 +113,14 @@ fun SettingsScreen(
                     }
 
                     Spacer(Modifier.height(8.dp))
-                    Text("데이터 소스", style = MaterialTheme.typography.labelLarge)
+                    SectionLabel("데이터 소스")
                     health.sourcesConfigured.forEach { (name, configured) ->
                         KeyValue(name, if (configured) "키 설정됨" else "키 없음")
                     }
 
                     if (health.pollStatus.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
-                        Text("마지막 수집", style = MaterialTheme.typography.labelLarge)
+                        SectionLabel("마지막 수집")
                         health.pollStatus.forEach { poll ->
                             KeyValue(
                                 poll.source,
@@ -129,11 +131,12 @@ fun SettingsScreen(
                     }
 
                     Spacer(Modifier.height(12.dp))
-                    OutlinedButton(
+                    GhostAction(
+                        text = "지금 수집",
                         onClick = onServerRefresh,
                         enabled = !state.loading,
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("지금 수집") }
+                    )
                 }
             }
         }
@@ -160,13 +163,16 @@ fun SettingsScreen(
 
                 if (state.notificationsEnabled) {
                     Spacer(Modifier.height(10.dp))
-                    Text("알림 시각", style = MaterialTheme.typography.labelLarge)
-                    FlowRow(horizontalArrangement = Arr.spacedBy(6.dp)) {
+                    SectionLabel("알림 시각")
+                    FlowRow(
+                        horizontalArrangement = Arr.spacedBy(Dim.GapTight),
+                        verticalArrangement = Arr.spacedBy(Dim.GapTight),
+                    ) {
                         listOf(6, 7, 8, 9, 12, 18, 21).forEach { hour ->
-                            FilterChip(
+                            SelectChip(
                                 selected = state.notifyHour == hour,
                                 onClick = { onSetNotifyHour(hour) },
-                                label = { Text("%02d시".format(hour)) },
+                                label = "%02d시".format(hour),
                             )
                         }
                     }
@@ -179,25 +185,24 @@ fun SettingsScreen(
 
                 if (!state.notificationPermission) {
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        "알림 권한이 꺼져 있다. 켜지 않으면 확인은 돌아도 " +
-                            "알림이 뜨지 않는다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                    NoteRow(
+                        Meaning.Danger,
+                        "알림 권한이 꺼져 있다. 켜지 않으면 확인은 돌아도 알림이 뜨지 않는다.",
                     )
                     Spacer(Modifier.height(6.dp))
-                    Button(
-                        onClick = onRequestNotificationPermission,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("알림 권한 허용") }
+                    PrimaryAction(
+                        "알림 권한 허용", onRequestNotificationPermission,
+                        Modifier.fillMaxWidth(),
+                    )
                 }
 
                 Spacer(Modifier.height(10.dp))
-                OutlinedButton(
+                GhostAction(
+                    text = "지금 확인해서 알림 띄우기",
                     onClick = onTestNotification,
                     enabled = !state.loading && state.isConfigured,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("지금 확인해서 알림 띄우기") }
+                )
 
                 state.lastNotifyResult?.let {
                     Spacer(Modifier.height(6.dp))
@@ -217,9 +222,7 @@ fun SettingsScreen(
 
                 when (val u = state.update) {
                     is Updater.State.Idle -> {
-                        Button(onClick = onCheckUpdate, modifier = Modifier.fillMaxWidth()) {
-                            Text("업데이트 확인")
-                        }
+                        PrimaryAction("업데이트 확인", onCheckUpdate, Modifier.fillMaxWidth())
                     }
                     is Updater.State.Checking -> {
                         Text("확인 중...", style = MaterialTheme.typography.bodyMedium)
@@ -228,9 +231,7 @@ fun SettingsScreen(
                         Text("최신 버전입니다 (${u.current})",
                             style = MaterialTheme.typography.bodyMedium, color = VerifiedGreen)
                         Spacer(Modifier.height(8.dp))
-                        OutlinedButton(onClick = onCheckUpdate, modifier = Modifier.fillMaxWidth()) {
-                            Text("다시 확인")
-                        }
+                        GhostAction("다시 확인", onCheckUpdate, Modifier.fillMaxWidth())
                     }
                     is Updater.State.Available -> {
                         Text("새 버전 ${u.info.versionName}",
@@ -241,9 +242,7 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Spacer(Modifier.height(8.dp))
-                        Button(onClick = onDownloadUpdate, modifier = Modifier.fillMaxWidth()) {
-                            Text("내려받기")
-                        }
+                        PrimaryAction("내려받기", onDownloadUpdate, Modifier.fillMaxWidth())
                     }
                     is Updater.State.Downloading -> {
                         Text("내려받는 중 ${u.percent}%",
@@ -258,28 +257,24 @@ fun SettingsScreen(
                         Text("받기 완료 — 설치하면 앱이 잠시 닫힙니다.",
                             style = MaterialTheme.typography.bodyMedium)
                         Spacer(Modifier.height(8.dp))
-                        Button(onClick = { onInstallUpdate(u.file) },
-                            modifier = Modifier.fillMaxWidth()) {
-                            Text("설치")
-                        }
+                        PrimaryAction(
+                            "설치", { onInstallUpdate(u.file) }, Modifier.fillMaxWidth(),
+                        )
                     }
                     is Updater.State.NeedsPermission -> {
                         Text("'알 수 없는 앱 설치'를 켜야 설치할 수 있습니다. " +
                             "설정에서 허용한 뒤 이 화면으로 돌아오세요.",
                             style = MaterialTheme.typography.bodySmall, color = WarningAmber)
                         Spacer(Modifier.height(8.dp))
-                        Button(onClick = onOpenInstallPermission,
-                            modifier = Modifier.fillMaxWidth()) {
-                            Text("권한 설정 열기")
-                        }
+                        PrimaryAction(
+                            "권한 설정 열기", onOpenInstallPermission, Modifier.fillMaxWidth(),
+                        )
                     }
                     is Updater.State.Failed -> {
                         Text(u.message, style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error)
                         Spacer(Modifier.height(8.dp))
-                        OutlinedButton(onClick = onCheckUpdate, modifier = Modifier.fillMaxWidth()) {
-                            Text("다시 시도")
-                        }
+                        GhostAction("다시 시도", onCheckUpdate, Modifier.fillMaxWidth())
                     }
                 }
             }

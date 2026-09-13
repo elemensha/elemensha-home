@@ -19,8 +19,10 @@ import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -33,8 +35,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.elemensha.home.ui.FiltersScreen
+import com.elemensha.home.ui.Graphite
 import com.elemensha.home.ui.HomeTheme
 import com.elemensha.home.ui.ListingsScreen
 import com.elemensha.home.ui.MapScreen
@@ -102,14 +106,33 @@ private fun AppScaffold(viewModel: AppViewModel) {
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar {
+            // 아래 띠는 종이 쪽에 둔다. 선택된 칸만 흑연으로 채워 지금 어디에
+            // 있는지가 색이 아니라 채움으로 드러나게 했다.
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 0.dp,
+            ) {
                 Tab.entries.forEach { entry ->
                     NavigationBarItem(
                         selected = tab == entry,
                         onClick = { tab = entry },
                         icon = { Icon(entry.icon, contentDescription = entry.label) },
-                        label = { Text(entry.label) },
+                        label = {
+                            Text(
+                                entry.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Graphite.OnDark,
+                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                            indicatorColor = Graphite.G800,
+                            unselectedIconColor = MaterialTheme.colorScheme.outline,
+                            unselectedTextColor = MaterialTheme.colorScheme.outline,
+                        ),
                     )
                 }
             }
